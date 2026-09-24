@@ -18,6 +18,9 @@ window.createYouTubeLayer = function (stage) {
   stage.firstElementChild.after(box);
 
   let player = null, ready = false, id = null, latest = null, apiPromise = null;
+  // Where playback *should* be, advanced by the wall clock. Browsers pause muted embeds
+  // in background tabs, so the player's own time can't be trusted to keep going.
+  let clock = null;
 
   function api() {
     if (!apiPromise) {
@@ -75,6 +78,7 @@ window.createYouTubeLayer = function (stage) {
     if (!ready) return;
     if (vid !== id) {
       id = vid;
+      clock = { pos: time || 0, at: performance.now() };
       player.loadVideoById({ videoId: vid, startSeconds: time || 0 });
       return;
     }
@@ -82,8 +86,22 @@ window.createYouTubeLayer = function (stage) {
     if (time != null && Math.abs(player.getCurrentTime() - time) > 2) player.seekTo(time, true);
   }
 
+  // Playback position: the player's own time while it is actually playing (which also
+  // re-anchors the clock), otherwise the clock's estimate, wrapped for looping videos.
+  function position() {
+    const now = performance.now();
+    if (ready && player.getPlayerState() === YT.PlayerState.PLAYING) {
+      clock = { pos: player.getCurrentTime(), at: now };
+      return clock.pos;
+    }
+    if (!clock) return ready ? player.getCurrentTime() : 0;
+    const dur = ready ? player.getDuration() : 0;
+    const t = clock.pos + (now - clock.at) / 1000;
+    return dur > 0 ? t % dur : t;
+  }
+
   return {
     apply,
-    time: () => (ready ? player.getCurrentTime() : 0),
+    time: position,
   };
 };

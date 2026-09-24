@@ -422,4 +422,10 @@ liveBtn.addEventListener("click", () => (peer ? stopLive() : goLive()));
 window.addEventListener("beforeunload", stopLive);
 
 updateYouTube(false);
-setInterval(sendYouTube, 2000); // keeps viewers' playback in step
+// Every 2 s: keep viewers in step, and let the studio's own player catch up to the
+// clock if the browser paused it while this tab was in the background.
+setInterval(() => {
+  const st = ytState();
+  if (st.on && st.id) yt.apply(st, st.time);
+  sendYouTube();
+}, 2000);
