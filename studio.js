@@ -371,7 +371,9 @@ function frame() {
       setStatus("No audio data – this browser may block analysing the stream; try Chrome");
     }
   }
+  const tb = performance.now();
   const bs = p.bodyOn && p.camera ? body.update(p.mirror) : null;
+  frameStats.body = Math.max(frameStats.body * 0.95, performance.now() - tb);
   if (bs) checkHandsUp(bs);
   const now = shows && shows[String(p.channel)] && shows[String(p.channel)].now;
   fx.render(p, lv, radio && radio.playing ? radio : null, now, art, p.channel, bs);
@@ -392,7 +394,17 @@ function frame() {
   }
 }
 const ticker = new Worker(URL.createObjectURL(new Blob(["setInterval(() => postMessage(0), 1000 / 30);"], { type: "text/javascript" })));
-ticker.onmessage = frame;
+// If a frame runs long (body tracking on a busy machine), ticks queue up behind it; skip
+// the stale ones instead of rendering them all back to back, which would lock the page.
+let lastFrame = 0;
+const frameStats = { ms: 0, body: 0 };
+ticker.onmessage = () => {
+  const t = performance.now();
+  if (t - lastFrame < 25) return;
+  lastFrame = t;
+  frame();
+  frameStats.ms = frameStats.ms * 0.9 + (performance.now() - t) * 0.1;
+};
 
 // ---- Start / stop studio ----
 const startBtn = document.getElementById("startBtn");
