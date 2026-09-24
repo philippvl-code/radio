@@ -1,18 +1,29 @@
 // Full screen for the video stage: a button, double-click, or the F key. Uses the
 // webkit-prefixed calls Safari still needs, and falls back to the native video player
-// on iPhone, where only <video> elements can go full screen.
+// on iPhone, where only <video> elements can go full screen. If a browser refuses full
+// screen altogether, the stage fills the browser window instead (Esc to leave).
 window.setupFullscreen = function (stage, button, video) {
-  const current = () => document.fullscreenElement || document.webkitFullscreenElement;
+  let windowFill = false;
+  const current = () => document.fullscreenElement || document.webkitFullscreenElement || (windowFill && stage);
+
+  function fillWindow(on) {
+    windowFill = on;
+    stage.classList.toggle("window-full", on);
+    sync();
+  }
 
   function toggle() {
+    if (windowFill) return fillWindow(false);
     if (current()) {
       (document.exitFullscreen || document.webkitExitFullscreen).call(document);
     } else if (stage.requestFullscreen) {
-      stage.requestFullscreen().catch(() => {});
+      stage.requestFullscreen().catch(() => fillWindow(true));
     } else if (stage.webkitRequestFullscreen) {
       stage.webkitRequestFullscreen();
     } else if (video && video.webkitEnterFullscreen) {
       video.webkitEnterFullscreen();
+    } else {
+      fillWindow(true);
     }
   }
 
@@ -35,6 +46,7 @@ window.setupFullscreen = function (stage, button, video) {
   stage.addEventListener("dblclick", toggle);
   stage.addEventListener("mousemove", wake);
   document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && windowFill) return fillWindow(false);
     const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName);
     if ((e.key === "f" || e.key === "F") && !typing && !e.metaKey && !e.ctrlKey) toggle();
   });
