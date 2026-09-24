@@ -16,16 +16,21 @@ const PARAMS = [
 
   ["Effects", "zoom", "Zoom punch · beat", "range", 0.4, range()],
   ["Effects", "flash", "Flash · beat", "range", 0.15, range()],
-  ["Effects", "rgb", "RGB split · bass", "range", 0.3, range()],
+  ["Effects", "rgb", "RGB split · mid", "range", 0.3, range()],
   ["Effects", "hue", "Hue shift · beat", "range", 0, range()],
   ["Effects", "pixelate", "Pixelate · treble", "range", 0, range()],
   ["Effects", "glitch", "Glitch · beat", "range", 0, range()],
   ["Effects", "kaleido", "Kaleidoscope · mid", "select", 0, { options: [[0, "Off"], [4, "4"], [6, "6"], [8, "8"], [12, "12"]] }],
 
-  ["Visualiser", "vis", "Style", "select", "bars", { options: [["none", "None"], ["bars", "Bars"], ["mirror", "Mirrored bars"], ["wave", "Waveform"], ["circle", "Circle"]] }],
-  ["Visualiser", "visPos", "Position", "select", "bottom", { options: [["top", "Top"], ["middle", "Middle"], ["bottom", "Bottom"]] }],
+  ["Visualiser", "vis", "Style", "select", "bars", { options: [["none", "None"], ["bars", "Bars"], ["mirror", "Mirrored bars"], ["columns", "Full-height bars"], ["wave", "Waveform"], ["circle", "Circle"]] }],
+  ["Visualiser", "barCount", "Number of bars", "range", 32, { ...range(1, 96, 1), when: p => ["bars", "mirror", "columns", "circle"].includes(p.vis) }],
+  ["Visualiser", "colMax", "Max thickness", "range", 0.8, { ...range(0.05, 1), when: p => p.vis === "columns" }],
+  ["Visualiser", "colBass", "Thickness · bass", "range", 0, { ...range(), when: p => p.vis === "columns" }],
+  ["Visualiser", "colMid", "Thickness · mid", "range", 0.7, { ...range(), when: p => p.vis === "columns" }],
+  ["Visualiser", "colTreble", "Thickness · treble", "range", 0.7, { ...range(), when: p => p.vis === "columns" }],
+  ["Visualiser", "visPos", "Position", "select", "bottom", { options: [["top", "Top"], ["middle", "Middle"], ["bottom", "Bottom"]], when: p => !["none", "columns"].includes(p.vis) }],
   ["Visualiser", "visColor", "Colour", "color", "#ffffff"],
-  ["Visualiser", "visScale", "Height", "range", 0.6, range(0.1, 1.5)],
+  ["Visualiser", "visScale", "Height", "range", 0.6, { ...range(0.1, 1.5), when: p => !["none", "columns"].includes(p.vis) }],
   ["Visualiser", "visOpacity", "Opacity", "range", 0.85, range()],
 
   ["Now playing", "np", "Show card", "toggle", true],
@@ -36,6 +41,15 @@ const PARAMS = [
   ["Text", "textColor", "Colour", "color", "#ffffff"],
   ["Text", "textPos", "Position", "select", "middle", { options: [["top", "Top"], ["middle", "Middle"], ["bottom", "Bottom"]] }],
   ["Text", "textPulse", "Pulse · beat", "range", 0.3, range()],
+
+  ["YouTube overlay", "ytUrl", "YouTube link", "text", ""],
+  ["YouTube overlay", "ytOn", "Show video", "toggle", false],
+  ["YouTube overlay", "ytLayout", "Layout", "select", "full", { options: [["full", "Full frame"], ["center", "Centre"], ["tl", "Top left"], ["tr", "Top right"], ["bl", "Bottom left"], ["br", "Bottom right"]] }],
+  ["YouTube overlay", "ytSize", "Size", "range", 0.35, { ...range(0.15, 1), when: p => p.ytLayout !== "full" }],
+  ["YouTube overlay", "ytOpacity", "Opacity", "range", 0.8, range()],
+  ["YouTube overlay", "ytBlend", "Blend", "select", "normal", { options: [["normal", "Normal"], ["screen", "Screen"], ["lighten", "Lighten"], ["multiply", "Multiply"], ["darken", "Darken"], ["overlay", "Overlay"], ["difference", "Difference"]] }],
+
+  ["Randomiser", "autoRandom", "Auto randomise", "select", 0, { options: [[0, "Off"], [8, "Every 8 beats"], [16, "Every 16 beats"], [32, "Every 32 beats"], [64, "Every 64 beats"]] }],
 ];
 
 // Presets only touch the look; station, camera on/off and text content are left alone.
@@ -46,8 +60,40 @@ const PRESETS = {
   Kaleido: { mode: "normal", zoom: 0.3, flash: 0.1, rgb: 0.3, hue: 0.4, pixelate: 0, glitch: 0, kaleido: 8, vis: "none" },
   Glitch: { mode: "normal", zoom: 0.4, flash: 0.2, rgb: 0.9, hue: 0, pixelate: 0.4, glitch: 0.8, kaleido: 0, vis: "mirror", visPos: "middle", visColor: "#ff3b30", visOpacity: 0.8 },
   Noir: { mode: "mono", zoom: 0.25, flash: 0.1, rgb: 0, hue: 0, pixelate: 0, glitch: 0, kaleido: 0, vis: "wave", visPos: "bottom", visColor: "#ffffff", visOpacity: 0.6 },
+  Stripes: { mode: "mono", zoom: 0.3, flash: 0.15, rgb: 0.5, hue: 0, pixelate: 0, glitch: 0, kaleido: 0, vis: "columns", barCount: 12, colMax: 0.8, colBass: 0, colMid: 0.7, colTreble: 0.7, visColor: "#ffffff", visOpacity: 0.85 },
   Heat: { mode: "thermal", zoom: 0.5, flash: 0.2, rgb: 0.2, hue: 0, pixelate: 0.3, glitch: 0, kaleido: 0, vis: "bars", visPos: "bottom", visColor: "#ffe066", visOpacity: 0.85 },
 };
+
+// Randomiser: a fresh look from the same controls the presets use.
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const rnd = (lo, hi) => Math.round((lo + Math.random() * (hi - lo)) * 100) / 100;
+function hsl(h, s, l) {
+  const f = n => {
+    const k = (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, "0");
+  };
+  return "#" + f(0) + f(8) + f(4);
+}
+function randomLook() {
+  const hue = Math.random() * 360;
+  return {
+    mode: pick(["normal", "normal", "mono", "duotone", "duotone", "invert", "thermal"]),
+    duoA: hsl(hue, 0.7, 0.08),
+    duoB: hsl((hue + pick([30, 150, 180, 210])) % 360, 1, 0.6),
+    zoom: rnd(0, 0.8), flash: rnd(0, 0.4), rgb: rnd(0, 0.9),
+    hue: pick([0, 0, rnd(0.2, 0.8)]),
+    pixelate: pick([0, 0, 0, rnd(0.2, 0.6)]),
+    glitch: pick([0, 0, rnd(0.2, 0.8)]),
+    kaleido: pick([0, 0, 0, 4, 6, 8, 12]),
+    vis: pick(["bars", "mirror", "columns", "columns", "wave", "circle", "none"]),
+    barCount: pick([4, 8, 12, 16, 24, 32, 48, 64]),
+    colMax: rnd(0.4, 1), colBass: pick([0, 0, rnd(0, 0.6)]), colMid: rnd(0.3, 1), colTreble: rnd(0.3, 1),
+    visPos: pick(["top", "middle", "bottom"]),
+    visScale: rnd(0.4, 1.2),
+    visColor: pick(["#ffffff", hsl(Math.random() * 360, 1, 0.6)]),
+    visOpacity: rnd(0.5, 0.95),
+  };
+}
 
 const STORE = "radio-settings";
 const p = Object.fromEntries(PARAMS.map(([, id, , , def]) => [id, def]));
@@ -121,6 +167,7 @@ function set(changes) {
   if (p.channel !== prev.channel) changeChannel();
   if (p.monitor !== prev.monitor && radio) radio.setMonitor(p.monitor);
   if (p.camera !== prev.camera && started) p.camera ? startCamera() : stopCamera();
+  if (YT_KEYS.some(k => p[k] !== prev[k])) updateYouTube(p.ytUrl !== prev.ytUrl);
 }
 
 const presetsEl = document.getElementById("presets");
@@ -129,9 +176,34 @@ for (const name in PRESETS) {
   b.addEventListener("click", () => set(PRESETS[name]));
   presetsEl.append(b);
 }
+const randomBtn = Object.assign(document.createElement("button"), { textContent: "Randomise" });
+randomBtn.addEventListener("click", () => set(randomLook()));
+presetsEl.append(randomBtn);
 
 buildPanel();
 syncPanel();
+
+// ---- YouTube overlay ----
+const YT_KEYS = ["ytUrl", "ytOn", "ytLayout", "ytSize", "ytOpacity", "ytBlend"];
+const yt = createYouTubeLayer(document.querySelector(".stage"));
+const ytState = () => ({
+  type: "yt", id: parseYouTube(p.ytUrl), on: p.ytOn, layout: p.ytLayout,
+  size: p.ytSize, opacity: p.ytOpacity, blend: p.ytBlend, time: yt.time(),
+});
+function updateYouTube(linkChanged) {
+  const id = parseYouTube(p.ytUrl);
+  inputs.ytUrl.input.setCustomValidity(p.ytUrl && !id ? "Not a YouTube link" : "");
+  // Pasting a new working link switches the overlay on.
+  if (linkChanged && id && !p.ytOn) return set({ ytOn: true });
+  const st = ytState();
+  yt.apply(st, linkChanged ? 0 : undefined);
+  sendYouTube();
+}
+function sendYouTube() {
+  if (!conns.size) return;
+  const st = ytState();
+  conns.forEach(c => c.open && c.send(st));
+}
 
 // ---- Camera, radio, now playing ----
 const cam = document.getElementById("cam");
@@ -207,8 +279,14 @@ const meters = ["Bass", "Mid", "Treble"].map(n => document.getElementById("m" + 
 const beatEl = document.getElementById("mBeat");
 
 let silentSince = null;
+let lastCount = 0, beatsSinceRandom = 0;
 function frame() {
   const lv = radio && radio.playing ? radio.update(p.sensitivity) : QUIET;
+  if (lv.count !== undefined && lv.count !== lastCount) {
+    beatsSinceRandom += lv.count - lastCount;
+    lastCount = lv.count;
+    if (p.autoRandom && beatsSinceRandom >= p.autoRandom) { beatsSinceRandom = 0; set(randomLook()); }
+  }
   if (radio && radio.playing) {
     const silent = radio.freq.every(v => v === 0);
     silentSince = silent ? silentSince || performance.now() : null;
@@ -302,6 +380,7 @@ function goLive() {
     conn.on("open", () => {
       conns.add(conn);
       conn.send({ type: "station", channel: p.channel });
+      conn.send(ytState());
       const call = peer.call(conn.peer, outStream, { sdpTransform: musicSdp });
       calls.set(conn.peer, call);
       updateViewers();
@@ -332,3 +411,6 @@ function stopLive() {
 
 liveBtn.addEventListener("click", () => (peer ? stopLive() : goLive()));
 window.addEventListener("beforeunload", stopLive);
+
+updateYouTube(false);
+setInterval(sendYouTube, 2000); // keeps viewers' playback in step

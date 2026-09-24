@@ -107,7 +107,7 @@ window.createRadio = function () {
   const wave = new Uint8Array(analyser.fftSize);
   const binHz = ctx.sampleRate / analyser.fftSize;
 
-  const levels = { bass: 0, mid: 0, treble: 0, beat: 0 };
+  const levels = { bass: 0, mid: 0, treble: 0, beat: 0, count: 0 };
   const peak = { bass: 0.5, mid: 0.5, treble: 0.5 };
   const floor = { bass: 0.3, mid: 0.3, treble: 0.3 };
   const bassHistory = [0, 0, 0, 0];
@@ -148,6 +148,7 @@ window.createRadio = function () {
     const threshold = Math.max(0.07, fluxAvg * 2.5) / sensitivity;
     if (flux > threshold && raw.bass > 0.2 && now - lastBeat > 260) {
       levels.beat = 1;
+      levels.count++;
       lastBeat = now;
     } else {
       levels.beat *= Math.exp(-dt / 0.12);

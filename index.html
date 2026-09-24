@@ -7,7 +7,7 @@
   <meta name="description" content="Live camera with visuals driven by NTS Radio.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@500&display=swap">
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <header>
@@ -26,9 +26,10 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <script src="config.js?v=6"></script>
-  <script src="nts.js?v=6"></script>
-  <script src="fullscreen.js?v=6"></script>
+  <script src="config.js?v=7"></script>
+  <script src="nts.js?v=7"></script>
+  <script src="fullscreen.js?v=7"></script>
+  <script src="youtube.js?v=7"></script>
   <script>
     const video = document.getElementById("video");
     const placeholder = document.getElementById("placeholder");
@@ -37,6 +38,8 @@
     const statusText = document.getElementById("statusText");
     const npEl = document.getElementById("np");
     setupFullscreen(document.querySelector(".stage"), document.getElementById("fsBtn"), video);
+    const yt = createYouTubeLayer(document.querySelector(".stage"));
+    let ytLast = null;
 
     function setStatus(text, live) { statusText.textContent = text; status.classList.toggle("live", !!live); }
 
@@ -67,6 +70,7 @@
 
     function showOffline() {
       video.srcObject = null;
+      if (ytLast) yt.apply({ ...ytLast, on: false });
       unmute.hidden = true;
       placeholder.hidden = false;
       placeholder.textContent = "Off air right now. This page reconnects on its own.";
@@ -83,6 +87,7 @@
       const conn = peer.connect(STREAM_ID, { reliable: true });
       conn.on("data", msg => {
         if (msg && msg.type === "station") { channel = msg.channel; renderNowPlaying(); }
+        if (msg && msg.type === "yt") { ytLast = msg; yt.apply({ ...msg, on: msg.on && !!video.srcObject }, msg.time); }
       });
       conn.on("close", () => { showOffline(); scheduleRetry(); });
       conn.on("error", () => { showOffline(); scheduleRetry(); });
@@ -97,6 +102,7 @@
         placeholder.hidden = true;
         unmute.hidden = !video.muted;
         setStatus("Live", true);
+        if (ytLast) yt.apply(ytLast, ytLast.time);
       });
       call.on("close", () => { showOffline(); scheduleRetry(); });
     });

@@ -77,7 +77,7 @@ window.createFx = function (outCanvas, camVideo) {
         if (hash(row) < uGlitch * (0.12 + uBeat * 0.6)) p.x += (hash(row + 3.1) - 0.5) * 0.25 * uGlitch;
       }
 
-      float off = uRgb * (0.002 + 0.025 * uBass);
+      float off = uRgb * (0.002 + 0.025 * uMid);
       vec3 col = vec3(cam(p + vec2(off, 0.0)).r, cam(p).g, cam(p - vec2(off, 0.0)).b) * uCamOn;
 
       float l = dot(col, vec3(0.299, 0.587, 0.114));
@@ -175,8 +175,18 @@ window.createFx = function (outCanvas, camVideo) {
     const cy = H * Y[p.visPos];
     const maxH = H * 0.3 * p.visScale;
 
-    if (p.vis === "bars" || p.vis === "mirror") {
-      const n = 48, v = radio.bars(n, p.sensitivity);
+    if (p.vis === "columns") {
+      // Full-height bars: each one's thickness pulses with the chosen bands, varied per
+      // bar by its own slice of the spectrum.
+      const n = p.barCount, v = radio.bars(n, p.sensitivity);
+      const drive = Math.min(1, p.colBass * lv.bass + p.colMid * lv.mid + p.colTreble * lv.treble);
+      const slotW = W / n, maxW = slotW * p.colMax;
+      for (let i = 0; i < n; i++) {
+        const w = Math.max(1, maxW * drive * (0.35 + 0.65 * v[i]));
+        out.fillRect(slotW * (i + 0.5) - w / 2, 0, w, H);
+      }
+    } else if (p.vis === "bars" || p.vis === "mirror") {
+      const n = p.barCount, v = radio.bars(n, p.sensitivity);
       const gap = W * 0.004, bw = (W * 0.9 - gap * (n - 1)) / n, x0 = W * 0.05;
       for (let i = 0; i < n; i++) {
         const h = Math.max(2, v[i] * maxH);
@@ -196,7 +206,7 @@ window.createFx = function (outCanvas, camVideo) {
       }
       out.stroke();
     } else if (p.vis === "circle") {
-      const n = 72, v = radio.bars(n / 2, p.sensitivity);
+      const n = p.barCount * 2, v = radio.bars(p.barCount, p.sensitivity);
       const r = H * 0.14 * (1 + lv.beat * 0.12 * p.visScale);
       out.lineWidth = Math.max(2, (2 * Math.PI * r) / n * 0.55);
       out.lineCap = "round";

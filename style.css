@@ -95,3 +95,15 @@ button.stop { background: var(--live); color: #fff; }
 .stage.is-full canvas, .stage.is-full video { object-fit: contain; }
 .stage.idle, .stage.idle * { cursor: none; }
 .stage.idle .fs-btn, .stage.idle .unmute { opacity: 0; pointer-events: none; }
+
+/* YouTube overlay */
+.yt-layer { position: absolute; z-index: 1; pointer-events: none; }
+.yt-layer[data-layout=full] { inset: 0; }
+.yt-layer:not([data-layout=full]) { width: calc(var(--yt-size) * 100%); aspect-ratio: 16 / 9; }
+.yt-layer[data-layout=center] { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.yt-layer[data-layout=tl] { left: 3%; top: 5%; }
+.yt-layer[data-layout=tr] { right: 3%; top: 5%; }
+.yt-layer[data-layout=bl] { left: 3%; bottom: 5%; }
+.yt-layer[data-layout=br] { right: 3%; bottom: 5%; }
+.yt-layer iframe { width: 100%; height: 100%; border: 0; display: block; }
+.ctl input:invalid { border-color: var(--live); }
