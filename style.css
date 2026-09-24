@@ -109,3 +109,9 @@ button.stop { background: var(--live); color: #fff; }
 .ctl input:invalid { border-color: var(--live); }
 .panel .note { font-size: 11px; color: var(--muted); padding: 2px 0 6px; }
 .panel .note:empty { display: none; }
+.ctl textarea {
+  width: 100%; min-width: 0; font: inherit; font-size: 13px; line-height: 1.5; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; resize: vertical;
+}
+.btnrow { display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 0 6px; }
+.btnrow button { padding: 7px 12px; font-size: 12px; }

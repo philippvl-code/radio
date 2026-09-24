@@ -491,13 +491,32 @@ window.createFx = function (outCanvas, camVideo) {
     out.restore();
   }
 
+  // Captions for the voice generator: the sentence being spoken, at the bottom.
+  function caption(text) {
+    if (!text) return;
+    const size = H * 0.042;
+    out.save();
+    out.font = `500 ${size}px ${DISPLAY}`;
+    out.textAlign = "center";
+    out.textBaseline = "middle";
+    const t = fit(text, W * 0.8);
+    const w = out.measureText(t).width + size * 1.4, h = size * 1.8, y = H * 0.9;
+    out.fillStyle = "rgba(0, 0, 0, 0.6)";
+    roundRect(W / 2 - w / 2, y - h / 2, w, h, h / 2);
+    out.fill();
+    out.fillStyle = "#fff";
+    out.fillText(t, W / 2, y);
+    out.restore();
+  }
+
   return {
-    render(p, lv, radio, np, art, channel, body) {
+    render(p, lv, radio, np, art, channel, body, captionText) {
       cameraPass(p, lv, body);
       bodyLayer(p, lv, body);
       visualiser(p, lv, radio);
       nowPlaying(p, np, art, channel);
       text(p, lv);
+      if (p.vCaptions) caption(captionText);
     },
   };
 };

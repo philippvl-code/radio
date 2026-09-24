@@ -13,8 +13,12 @@ window.createRadio = function () {
   const errorHandlers = [];
   const fail = e => errorHandlers.forEach(fn => fn(e));
 
-  // Everything downstream listens to `input`, whichever way the audio arrives.
+  // Everything downstream listens to `input`, whichever way the audio arrives. The music
+  // passes through its own gain first so it can be lowered ("ducked") under the voice,
+  // which joins at `input` directly.
   const input = ctx.createGain();
+  const music = ctx.createGain();
+  music.connect(input);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.55;
@@ -35,7 +39,7 @@ window.createRadio = function () {
     if (!el) {
       el = new Audio();
       el.crossOrigin = "anonymous";
-      ctx.createMediaElementSource(el).connect(input);
+      ctx.createMediaElementSource(el).connect(music);
       el.addEventListener("error", fail);
       el.addEventListener("ended", fail); // a live stream only "ends" if the server hung up
     }
@@ -58,7 +62,7 @@ window.createRadio = function () {
     channelData.forEach((d, i) => buf.copyToChannel(d.length === samples ? d : d.subarray(0, samples), i));
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(input);
+    src.connect(music);
     const now = ctx.currentTime;
     // Start (or recover from a network hiccup) with a small cushion; cap latency at 4 s.
     if (playHead < now + 0.02 || playHead > now + 4) playHead = now + 0.4;
@@ -179,6 +183,15 @@ window.createRadio = function () {
     },
     stop() { USE_DECODER ? stopDecoded() : stopElement(); this.playing = false; },
     setMonitor(v) { monitor.gain.value = v; },
+    ctx,
+    voiceIn: input,
+    // Lower the music by `amount` (0..1) while the voice speaks; 0 brings it back.
+    duck(amount) {
+      const t = ctx.currentTime;
+      music.gain.cancelScheduledValues(t);
+      music.gain.setValueAtTime(music.gain.value, t);
+      music.gain.linearRampToValueAtTime(1 - amount, t + (amount ? 0.25 : 0.8));
+    },
     onError(fn) { errorHandlers.push(fn); },
   };
 };

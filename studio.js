@@ -58,6 +58,20 @@ const PARAMS = [
   ["Body", "followText", "Text floats above head", "toggle", false, { when: p => p.bodyOn }],
   ["Body", "handsUp", "Hands up → randomise", "toggle", false, { when: p => p.bodyOn }],
 
+  ["Voice", "vText", "What to say", "textarea", ""],
+  ["Voice", "vButtons", "", "buttons", ""],
+  ["Voice", "vStatus", "", "note", ""],
+  ["Voice", "vEngine", "Engine", "select", "kokoro", { options: [["kokoro", "AI voice · in the stream"], ["system", "Mac voice · only you hear it"]] }],
+  ["Voice", "vVoice", "Voice", "select", "af_heart", { options: KOKORO_VOICES, when: p => p.vEngine === "kokoro" }],
+  ["Voice", "vSysVoice", "Voice", "select", "", { options: [], when: p => p.vEngine === "system" }],
+  ["Voice", "vSpeed", "Speed", "range", 1, range(0.5, 2, 0.05)],
+  ["Voice", "vPitch", "Pitch", "range", 1, { ...range(0.6, 1.5, 0.01), when: p => p.vEngine === "kokoro" }],
+  ["Voice", "vEffect", "Effect", "select", "none", { options: [["none", "None"], ["echo", "Echo"], ["hall", "Big hall"], ["radio", "Old radio"], ["robot", "Robot"]], when: p => p.vEngine === "kokoro" }],
+  ["Voice", "vVolume", "Voice volume", "range", 1, { ...range(0, 1.5), when: p => p.vEngine === "kokoro" }],
+  ["Voice", "vDuck", "Lower music while speaking", "range", 0.6, { ...range(), when: p => p.vEngine === "kokoro" }],
+  ["Voice", "vCaptions", "Show captions", "toggle", true],
+  ["Voice", "vRepeat", "Repeat", "select", 0, { options: [[0, "Off"], [30, "Every 30 s"], [60, "Every minute"], [120, "Every 2 minutes"], [300, "Every 5 minutes"]] }],
+
   ["YouTube overlay", "ytUrl", "YouTube link", "text", ""],
   ["YouTube overlay", "ytOn", "Show video", "toggle", false],
   ["YouTube overlay", "ytLayout", "Layout", "select", "full", { options: [["full", "Full frame"], ["center", "Centre"], ["tl", "Top left"], ["tr", "Top right"], ["bl", "Bottom left"], ["br", "Bottom right"]] }],
@@ -126,7 +140,7 @@ function randomLook() {
 }
 
 const STORE = "radio-settings";
-const p = Object.fromEntries(PARAMS.filter(r => r[3] !== "note").map(([, id, , , def]) => [id, def]));
+const p = Object.fromEntries(PARAMS.filter(r => !["note", "buttons"].includes(r[3])).map(([, id, , , def]) => [id, def]));
 try { Object.assign(p, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch {}
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(p)); } catch {} };
 
@@ -145,6 +159,11 @@ function buildPanel() {
       details.innerHTML = `<summary>${sec}</summary>`;
       controls.append(details);
     }
+    if (type === "buttons") {
+      const bar = Object.assign(document.createElement("div"), { className: "btnrow", id: "buttons-" + id });
+      details.append(bar);
+      continue;
+    }
     if (type === "note") {
       const note = Object.assign(document.createElement("div"), { className: "note", id: "note-" + id });
       rows.push({ row: note, when: extra.when });
@@ -152,7 +171,7 @@ function buildPanel() {
       continue;
     }
     const row = document.createElement("label");
-    row.className = "ctl" + (type === "text" ? " wide" : "");
+    row.className = "ctl" + (type === "text" || type === "textarea" ? " wide" : "");
     row.append(label);
     let input, readout;
     if (type === "range") {
@@ -165,6 +184,9 @@ function buildPanel() {
     } else if (type === "select") {
       input = document.createElement("select");
       for (const [v, t] of extra.options) input.append(new Option(t, v));
+      row.append(input);
+    } else if (type === "textarea") {
+      input = Object.assign(document.createElement("textarea"), { rows: 3, placeholder: "Type what the voice should say…" });
       row.append(input);
     } else if (type === "toggle") {
       input = Object.assign(document.createElement("input"), { type: "checkbox" });
@@ -251,6 +273,60 @@ const fx = createFx(outCanvas, cam);
 const body = createBodyTracker(cam);
 if (p.bodyOn) body.load();
 const bodyNote = document.getElementById("note-bodyStatus");
+
+// ---- Voice generator ----
+const voice = createVoice();
+const voiceNote = document.getElementById("note-vStatus");
+const speakBtn = Object.assign(document.createElement("button"), { textContent: "Speak" });
+const hushBtn = Object.assign(document.createElement("button"), { className: "ghost", textContent: "Stop" });
+const preloadBtn = Object.assign(document.createElement("button"), { className: "ghost", textContent: "Download AI voice" });
+document.getElementById("buttons-vButtons").append(speakBtn, hushBtn, preloadBtn);
+
+const voiceOptions = () => ({
+  engine: p.vEngine, voice: p.vVoice, systemVoice: p.vSysVoice, speed: p.vSpeed, pitch: p.vPitch,
+  effect: p.vEffect, volume: p.vVolume, duck: p.vDuck,
+});
+let repeatArmed = false, lastSpoke = 0;
+function speakNow() {
+  lastSpoke = performance.now();
+  voice.speak(p.vText, voiceOptions(), radio && radio.playing ? radio : null);
+}
+speakBtn.addEventListener("click", () => { repeatArmed = true; speakNow(); });
+hushBtn.addEventListener("click", () => { repeatArmed = false; voice.stop(radio); });
+preloadBtn.addEventListener("click", () => voice.load().catch(() => {}));
+// Cmd/Ctrl+Enter in the text box speaks.
+inputs.vText.input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); speakBtn.click(); }
+});
+setInterval(() => {
+  if (repeatArmed && p.vRepeat && !voice.state.speaking && performance.now() - lastSpoke > p.vRepeat * 1000) speakNow();
+}, 1000);
+
+// Fill the Mac voice list once the browser has loaded it.
+function fillSystemVoices() {
+  if (!window.speechSynthesis) return;
+  const sel = inputs.vSysVoice.input;
+  const voices = speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang));
+  if (!voices.length || sel.options.length) return;
+  voices.forEach(v => sel.append(new Option(`${v.name} · ${v.lang}`, v.voiceURI)));
+  if (!voices.some(v => v.voiceURI === p.vSysVoice)) p.vSysVoice = voices[0].voiceURI;
+  sel.value = p.vSysVoice;
+}
+if (window.speechSynthesis) { fillSystemVoices(); speechSynthesis.onvoiceschanged = fillSystemVoices; }
+
+function renderVoiceNote() {
+  const s = voice.state;
+  preloadBtn.hidden = p.vEngine !== "kokoro" || s.status === "ready";
+  preloadBtn.disabled = s.status === "loading";
+  voiceNote.textContent =
+    s.error ? s.error
+    : s.speaking ? "Speaking…"
+    : p.vEngine === "system" ? "Mac voices play on this computer only; viewers won't hear them."
+    : s.status === "loading" ? `Downloading AI voice… ${Math.round(s.progress || 0)}% (about 90 MB, once)`
+    : s.status === "failed" ? "AI voice failed to load – try the Mac voice"
+    : s.status === "ready" ? "AI voice ready. Cmd+Enter in the text box speaks."
+    : "The AI voice downloads about 90 MB the first time, then works offline.";
+}
 let radio = null, started = false, camStream = null;
 let shows = null, art = null, artUrl = null;
 
@@ -376,7 +452,8 @@ function frame() {
   frameStats.body = Math.max(frameStats.body * 0.95, performance.now() - tb);
   if (bs) checkHandsUp(bs);
   const now = shows && shows[String(p.channel)] && shows[String(p.channel)].now;
-  fx.render(p, lv, radio && radio.playing ? radio : null, now, art, p.channel, bs);
+  fx.render(p, lv, radio && radio.playing ? radio : null, now, art, p.channel, bs, voice.state.caption);
+  if (!document.hidden) renderVoiceNote();
   if (!document.hidden && bodyNote) {
     const st = body.state.status;
     bodyNote.textContent = !p.bodyOn ? ""
@@ -416,6 +493,8 @@ function setStatus(text, live) { statusText.textContent = text; status.classList
 startBtn.addEventListener("click", async () => {
   if (started) {
     stopLive();
+    voice.stop(radio);
+    repeatArmed = false;
     radio.stop();
     stopCamera();
     started = false;
