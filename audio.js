@@ -37,7 +37,7 @@ window.createRadio = function () {
       el.crossOrigin = "anonymous";
       ctx.createMediaElementSource(el).connect(input);
       el.addEventListener("error", fail);
-      el.addEventListener("stalled", fail);
+      el.addEventListener("ended", fail); // a live stream only "ends" if the server hung up
     }
     el.src = url;
     return el.play();

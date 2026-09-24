@@ -267,8 +267,29 @@ async function changeChannel() {
   renderNowPlaying();
   broadcastInfo();
   if (radio && started) {
-    try { await radio.play(p.channel); } catch (e) { setStatus("Couldn't play NTS " + p.channel); }
+    try { await playWithRetry(3); } catch (e) { setStatus("Couldn't play NTS " + p.channel); }
   }
+}
+
+// NTS's stream servers occasionally drop or refuse a connection for a moment, so retry
+// with a short backoff instead of giving up.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function playWithRetry(attempts) {
+  let err;
+  for (let i = 0; i < attempts; i++) {
+    try { await radio.play(p.channel); return; } catch (e) { err = e; await sleep(1500 * (i + 1)); }
+  }
+  throw err;
+}
+let reconnecting = false;
+function onStreamError() {
+  if (!started || reconnecting) return;
+  reconnecting = true;
+  setStatus("NTS stream dropped – reconnecting…", !!peer);
+  playWithRetry(5)
+    .then(() => setStatus(peer ? "Live" : "Studio on (not live)", !!peer))
+    .catch(() => setStatus("NTS stream lost – press Stop studio, then Start studio"))
+    .finally(() => { reconnecting = false; });
 }
 
 // ---- Render loop ----
@@ -328,11 +349,11 @@ startBtn.addEventListener("click", async () => {
   startBtn.disabled = true;
   if (!radio) {
     radio = createRadio();
-    radio.onError(() => { if (started) setStatus("NTS stream interrupted"); });
+    radio.onError(onStreamError);
   }
   radio.setMonitor(p.monitor);
   try {
-    await radio.play(p.channel);
+    await playWithRetry(3);
   } catch (e) {
     setStatus("Couldn't play NTS: " + e.name);
     startBtn.disabled = false;
