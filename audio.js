@@ -9,6 +9,9 @@ window.createRadio = function () {
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.55;
+  // Radio is mastered loud; the default -30 dB ceiling pins most bins at the maximum.
+  analyser.minDecibels = -90;
+  analyser.maxDecibels = -10;
   const monitor = ctx.createGain();
   const out = ctx.createMediaStreamDestination();
 
@@ -23,7 +26,8 @@ window.createRadio = function () {
   const binHz = ctx.sampleRate / analyser.fftSize;
 
   const levels = { bass: 0, mid: 0, treble: 0, beat: 0 };
-  const peak = { bass: 0.2, mid: 0.2, treble: 0.2 };
+  const peak = { bass: 0.5, mid: 0.5, treble: 0.5 };
+  const floor = { bass: 0.3, mid: 0.3, treble: 0.3 };
   const bassHistory = [0, 0, 0, 0];
   let fluxAvg = 0.03, lastBeat = 0, lastT = performance.now();
 
@@ -34,8 +38,8 @@ window.createRadio = function () {
     return sum / (b - a + 1) / 255;
   }
 
-  // Levels are 0..1, auto-gained against a slowly falling peak so quiet and loud shows
-  // both drive the effects. `beat` jumps to 1 on a kick and decays. Kicks are found as a
+  // Levels are 0..1, rescaled between a moving floor and peak per band, so each band uses
+  // its full range whether the show is quiet or loud. `beat` jumps to 1 on a kick and decays. Kicks are found as a
   // sudden rise in bass over the last few frames (heavily compressed radio audio rarely
   // rises far above its average, but each kick is still a sharp step up).
   function update(sensitivity = 1) {
@@ -47,8 +51,12 @@ window.createRadio = function () {
 
     const raw = { bass: band(30, 150), mid: band(150, 2000), treble: band(2000, 10000) };
     for (const k in raw) {
-      peak[k] = Math.max(raw[k], peak[k] * Math.pow(0.9, dt), 0.05);
-      levels[k] = Math.min(1, Math.pow(raw[k] / peak[k], 3) * sensitivity);
+      const v = raw[k];
+      // Peak jumps up and eases down over a few seconds; floor drops at once and creeps up.
+      peak[k] = v > peak[k] ? v : peak[k] - (peak[k] - v) * Math.min(1, dt * 0.35);
+      floor[k] = v < floor[k] ? v : floor[k] + (v - floor[k]) * Math.min(1, dt * 0.35);
+      const span = Math.max(peak[k] - floor[k], 0.04);
+      levels[k] = Math.min(1, Math.pow(Math.max(0, (v - floor[k]) / span), 1.4) * sensitivity);
     }
 
     const flux = Math.max(0, raw.bass - Math.min(...bassHistory));

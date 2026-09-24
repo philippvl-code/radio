@@ -206,8 +206,16 @@ const QUIET = { bass: 0, mid: 0, treble: 0, beat: 0 };
 const meters = ["Bass", "Mid", "Treble"].map(n => document.getElementById("m" + n));
 const beatEl = document.getElementById("mBeat");
 
+let silentSince = null;
 function frame() {
   const lv = radio && radio.playing ? radio.update(p.sensitivity) : QUIET;
+  if (radio && radio.playing) {
+    const silent = radio.freq.every(v => v === 0);
+    silentSince = silent ? silentSince || performance.now() : null;
+    if (silentSince && performance.now() - silentSince > 4000 && !peer) {
+      setStatus("No audio data – this browser may block analysing the stream; try Chrome");
+    }
+  }
   const now = shows && shows[String(p.channel)] && shows[String(p.channel)].now;
   fx.render(p, lv, radio && radio.playing ? radio : null, now, art, p.channel);
   if (!document.hidden) {
