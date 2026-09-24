@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Radio Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@500&display=swap">
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <header>
+    <h1><a href="./">Radio Studio</a></h1>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">Off air</span></div>
+  </header>
+
+  <div class="studio">
+    <div class="left">
+      <div class="stage">
+        <canvas id="out" width="1280" height="720"></canvas>
+        <div class="placeholder" id="placeholder">Press Start studio to play NTS and turn on the camera.</div>
+      </div>
+
+      <div class="meters">
+        <div class="meter">Bass<div class="bar"><i id="mBass"></i></div></div>
+        <div class="meter">Mid<div class="bar"><i id="mMid"></i></div></div>
+        <div class="meter">Treble<div class="bar"><i id="mTreble"></i></div></div>
+        <div class="beat" id="mBeat" title="Beat"></div>
+      </div>
+
+      <div class="actions">
+        <button id="startBtn">Start studio</button>
+        <button id="liveBtn" class="ghost" disabled>Go live</button>
+        <span class="meta" id="viewers">0 viewers</span>
+      </div>
+
+      <div class="np" id="np"></div>
+    </div>
+
+    <aside class="panel">
+      <div class="presets" id="presets"></div>
+      <div id="controls"></div>
+      <p class="footnote">
+        Music: <a href="https://www.nts.live/" target="_blank" rel="noopener">NTS Radio</a>, live.
+        Viewers watch at <a href="./" target="_blank" rel="noopener">this page</a>.
+        Keep this tab open while live.
+      </p>
+    </aside>
+  </div>
+
+  <video id="cam" autoplay playsinline muted hidden></video>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="config.js?v=1"></script>
+  <script src="nts.js?v=1"></script>
+  <script src="audio.js?v=1"></script>
+  <script src="fx.js?v=1"></script>
+  <script src="studio.js?v=1"></script>
+</body>
+</html>
