@@ -7,7 +7,7 @@
   <title>Radio Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@500&display=swap">
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
   <header>
@@ -20,6 +20,7 @@
       <div class="stage">
         <canvas id="out" width="1280" height="720"></canvas>
         <div class="placeholder" id="placeholder">Press Start studio to play NTS and turn on the camera.</div>
+        <button class="fs-btn" id="fsBtn">Full screen</button>
       </div>
 
       <div class="meters">
@@ -44,7 +45,7 @@
       <p class="footnote">
         Music: <a href="https://www.nts.live/" target="_blank" rel="noopener">NTS Radio</a>, live.
         Viewers watch at <a href="./" target="_blank" rel="noopener">this page</a>.
-        Keep this tab open while live.
+        Keep this tab open while live. Press F for full screen.
       </p>
     </aside>
   </div>
@@ -52,10 +53,13 @@
   <video id="cam" autoplay playsinline muted hidden></video>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <script src="config.js?v=4"></script>
-  <script src="nts.js?v=4"></script>
-  <script src="audio.js?v=4"></script>
-  <script src="fx.js?v=4"></script>
-  <script src="studio.js?v=4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mpg123-decoder@1.0.3/dist/mpg123-decoder.min.js" charset="UTF-8"></script>
+  <script src="config.js?v=5"></script>
+  <script src="nts.js?v=5"></script>
+  <script src="audio.js?v=5"></script>
+  <script src="fx.js?v=5"></script>
+  <script src="fullscreen.js?v=5"></script>
+  <script src="studio.js?v=5"></script>
+  <script>setupFullscreen(document.querySelector(".stage"), document.getElementById("fsBtn"));</script>
 </body>
 </html>

@@ -266,7 +266,7 @@ startBtn.addEventListener("click", async () => {
   startBtn.textContent = "Stop studio";
   startBtn.disabled = false;
   liveBtn.disabled = false;
-  setStatus("Studio on (not live)");
+  setStatus(radio.decoding ? "Studio on (not live) · decoded audio" : "Studio on (not live)");
 });
 
 // ---- Broadcasting ----

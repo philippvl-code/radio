@@ -80,3 +80,17 @@ button.stop { background: var(--live); color: #fff; }
 /* Viewer */
 .viewer { max-width: 1100px; margin: 0 auto; display: grid; gap: 14px; }
 .unmute { position: absolute; right: 12px; bottom: 12px; padding: 8px 12px; font-size: 12px; white-space: nowrap; }
+
+/* Full screen */
+.fs-btn {
+  position: absolute; top: 10px; right: 10px; z-index: 2;
+  padding: 6px 10px; font-size: 12px;
+  background: rgba(0, 0, 0, .55); color: #fff; border: 1px solid rgba(255, 255, 255, .25);
+  opacity: 0; transition: opacity .2s;
+}
+.stage:hover .fs-btn, .fs-btn:focus-visible { opacity: 1; }
+@media (hover: none) { .fs-btn { opacity: 1; } }
+.stage.is-full { width: 100vw; height: 100vh; max-width: none; aspect-ratio: auto; border-radius: 0; background: #000; }
+.stage.is-full canvas, .stage.is-full video { object-fit: contain; }
+.stage.idle, .stage.idle * { cursor: none; }
+.stage.idle .fs-btn, .stage.idle .unmute { opacity: 0; pointer-events: none; }

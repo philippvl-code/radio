@@ -1,11 +1,20 @@
 // Plays an NTS channel through Web Audio, measures it for the visuals, and exposes the
 // audio as a MediaStream so it can be sent to viewers along with the video.
+//
+// Two ways in: Chrome and Firefox play the stream in an <audio> element and tap it with
+// createMediaElementSource. Safari hands Web Audio only silence for a live cross-origin
+// stream, so there we fetch the MP3 bytes ourselves, decode them with mpg123 (WASM, in a
+// worker) and schedule the PCM as buffers. Add ?decode=1 to the URL to force that path.
+const USE_DECODER = /[?&]decode=1/.test(location.search) ||
+  /^((?!chrome|chromium|crios|fxios|android|edg).)*safari/i.test(navigator.userAgent);
+
 window.createRadio = function () {
   const ctx = new AudioContext();
-  const el = new Audio();
-  el.crossOrigin = "anonymous";
+  const errorHandlers = [];
+  const fail = e => errorHandlers.forEach(fn => fn(e));
 
-  const source = ctx.createMediaElementSource(el);
+  // Everything downstream listens to `input`, whichever way the audio arrives.
+  const input = ctx.createGain();
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.55;
@@ -16,9 +25,82 @@ window.createRadio = function () {
   const out = ctx.createMediaStreamDestination();
 
   // The broadcast always gets full volume; "monitor" only changes what you hear locally.
-  source.connect(analyser);
-  source.connect(out);
-  source.connect(monitor).connect(ctx.destination);
+  input.connect(analyser);
+  input.connect(out);
+  input.connect(monitor).connect(ctx.destination);
+
+  // ---- <audio> element path ----
+  let el = null;
+  function playElement(url) {
+    if (!el) {
+      el = new Audio();
+      el.crossOrigin = "anonymous";
+      ctx.createMediaElementSource(el).connect(input);
+      el.addEventListener("error", fail);
+      el.addEventListener("stalled", fail);
+    }
+    el.src = url;
+    return el.play();
+  }
+  function stopElement() {
+    if (!el) return;
+    el.pause();
+    el.removeAttribute("src");
+    el.load();
+  }
+
+  // ---- fetch + decode path ----
+  let decoder = null, abort = null, playHead = 0;
+  const active = new Set();
+
+  function schedule(channelData, samples, sampleRate) {
+    const buf = ctx.createBuffer(channelData.length, samples, sampleRate);
+    channelData.forEach((d, i) => buf.copyToChannel(d.length === samples ? d : d.subarray(0, samples), i));
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(input);
+    const now = ctx.currentTime;
+    // Start (or recover from a network hiccup) with a small cushion; cap latency at 4 s.
+    if (playHead < now + 0.02 || playHead > now + 4) playHead = now + 0.4;
+    src.start(playHead);
+    playHead += buf.duration;
+    active.add(src);
+    src.onended = () => active.delete(src);
+  }
+
+  async function playDecoded(url) {
+    stopDecoded();
+    if (!decoder) {
+      decoder = new window["mpg123-decoder"].MPEGDecoderWebWorker();
+      await decoder.ready;
+    } else {
+      await decoder.reset();
+    }
+    const ctrl = abort = new AbortController();
+    const res = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
+    if (!res.ok || !res.body) throw new Error("NTS stream " + res.status);
+    const reader = res.body.getReader();
+    (async () => {
+      try {
+        while (!ctrl.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) throw new Error("NTS stream ended");
+          const { channelData, samplesDecoded, sampleRate } = await decoder.decode(value);
+          if (ctrl.signal.aborted) break;
+          if (samplesDecoded) schedule(channelData, samplesDecoded, sampleRate);
+        }
+      } catch (e) {
+        if (!ctrl.signal.aborted) fail(e);
+      }
+    })();
+  }
+  function stopDecoded() {
+    if (abort) abort.abort();
+    abort = null;
+    active.forEach(s => { try { s.stop(); } catch {} });
+    active.clear();
+    playHead = 0;
+  }
   out.stream.getAudioTracks().forEach(t => { t.contentHint = "music"; });
 
   const freq = new Uint8Array(analyser.frequencyBinCount);
@@ -87,14 +169,15 @@ window.createRadio = function () {
     freq, wave, levels, update, bars,
     stream: out.stream,
     playing: false,
+    decoding: USE_DECODER,
     async play(channel) {
       await ctx.resume();
-      el.src = NTS.streams[channel] + "?t=" + Date.now();
-      await el.play();
+      const url = NTS.streams[channel] + "?t=" + Date.now();
+      await (USE_DECODER ? playDecoded(url) : playElement(url));
       this.playing = true;
     },
-    stop() { el.pause(); el.removeAttribute("src"); el.load(); this.playing = false; },
+    stop() { USE_DECODER ? stopDecoded() : stopElement(); this.playing = false; },
     setMonitor(v) { monitor.gain.value = v; },
-    onError(fn) { el.addEventListener("error", fn); el.addEventListener("stalled", fn); },
+    onError(fn) { errorHandlers.push(fn); },
   };
 };
