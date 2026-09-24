@@ -7,7 +7,7 @@
   <meta name="description" content="Live camera with visuals driven by NTS Radio.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@500&display=swap">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <header>
@@ -26,10 +26,10 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <script src="config.js?v=8"></script>
-  <script src="nts.js?v=8"></script>
-  <script src="fullscreen.js?v=8"></script>
-  <script src="youtube.js?v=8"></script>
+  <script src="config.js?v=9"></script>
+  <script src="nts.js?v=9"></script>
+  <script src="fullscreen.js?v=9"></script>
+  <script src="youtube.js?v=9"></script>
   <script>
     const video = document.getElementById("video");
     const placeholder = document.getElementById("placeholder");
@@ -66,7 +66,12 @@
     setInterval(refreshShows, 60000);
 
     // Browsers only allow sound after a tap, so start muted and offer one.
-    unmute.addEventListener("click", () => { video.muted = false; video.play(); unmute.hidden = true; });
+    unmute.addEventListener("click", () => {
+      video.muted = false;
+      video.play();
+      unmute.hidden = true;
+      if (ytLast) yt.apply({ ...ytLast, on: ytLast.on && !!video.srcObject }, ytLast.time); // a tap also lets the overlay start
+    });
 
     function showOffline() {
       video.srcObject = null;
