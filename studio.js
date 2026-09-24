@@ -42,6 +42,22 @@ const PARAMS = [
   ["Text", "textPos", "Position", "select", "middle", { options: [["top", "Top"], ["middle", "Middle"], ["bottom", "Bottom"]] }],
   ["Text", "textPulse", "Pulse · beat", "range", 0.3, range()],
 
+  ["Body", "bodyOn", "Body tracking", "toggle", false],
+  ["Body", "bodyStatus", "", "note", ""],
+  ["Body", "bodyMode", "Body effect", "select", "off", { options: [["off", "None"], ["bgfx", "Effects on background only"], ["bodyfx", "Effects on body only"], ["fill", "Solid silhouette"], ["cutout", "Cut out person"], ["negative", "Negative body"]], when: p => p.bodyOn }],
+  ["Body", "bodyColor", "Silhouette colour", "color", "#ff3b30", { when: p => p.bodyOn && p.bodyMode === "fill" }],
+  ["Body", "bgColor", "Background colour", "color", "#000000", { when: p => p.bodyOn && p.bodyMode === "cutout" }],
+  ["Body", "outline", "Glow outline · bass", "range", 0, { ...range(), when: p => p.bodyOn }],
+  ["Body", "outlineColor", "Outline colour", "color", "#7df9ff", { when: p => p.bodyOn && p.outline > 0 }],
+  ["Body", "skeleton", "Skeleton", "select", "none", { options: [["none", "None"], ["lines", "Lines"], ["neon", "Neon"], ["dots", "Joints only"]], when: p => p.bodyOn }],
+  ["Body", "skelColor", "Skeleton / trail colour", "color", "#ffffff", { when: p => p.bodyOn }],
+  ["Body", "skelWidth", "Line width · bass", "range", 1, { ...range(0.2, 3, 0.05), when: p => p.bodyOn }],
+  ["Body", "trails", "Motion trails", "range", 0, { ...range(), when: p => p.bodyOn }],
+  ["Body", "sparks", "Sparks from hands · beat", "range", 0, { ...range(), when: p => p.bodyOn }],
+  ["Body", "followVis", "Circle visualiser follows body", "toggle", false, { when: p => p.bodyOn }],
+  ["Body", "followText", "Text floats above head", "toggle", false, { when: p => p.bodyOn }],
+  ["Body", "handsUp", "Hands up → randomise", "toggle", false, { when: p => p.bodyOn }],
+
   ["YouTube overlay", "ytUrl", "YouTube link", "text", ""],
   ["YouTube overlay", "ytOn", "Show video", "toggle", false],
   ["YouTube overlay", "ytLayout", "Layout", "select", "full", { options: [["full", "Full frame"], ["center", "Centre"], ["tl", "Top left"], ["tr", "Top right"], ["bl", "Bottom left"], ["br", "Bottom right"]] }],
@@ -61,6 +77,10 @@ const PRESETS = {
   Glitch: { mode: "normal", zoom: 0.4, flash: 0.2, rgb: 0.9, hue: 0, pixelate: 0.4, glitch: 0.8, kaleido: 0, vis: "mirror", visPos: "middle", visColor: "#ff3b30", visOpacity: 0.8 },
   Noir: { mode: "mono", zoom: 0.25, flash: 0.1, rgb: 0, hue: 0, pixelate: 0, glitch: 0, kaleido: 0, vis: "wave", visPos: "bottom", visColor: "#ffffff", visOpacity: 0.6 },
   Stripes: { mode: "mono", zoom: 0.3, flash: 0.15, rgb: 0.5, hue: 0, pixelate: 0, glitch: 0, kaleido: 0, vis: "columns", barCount: 12, colMax: 0.8, colBass: 0, colMid: 0.7, colTreble: 0.7, visColor: "#ffffff", visOpacity: 0.85 },
+  Aura: { bodyOn: true, bodyMode: "bgfx", mode: "duotone", duoA: "#05001a", duoB: "#6a5cff", outline: 0.6, outlineColor: "#7df9ff", skeleton: "none", trails: 0, sparks: 0.3, skelColor: "#7df9ff", zoom: 0.3, flash: 0.1, rgb: 0.5, hue: 0, pixelate: 0, glitch: 0, kaleido: 0, vis: "none" },
+  Silhouette: { bodyOn: true, bodyMode: "fill", bodyColor: "#ff3b30", outline: 0.3, outlineColor: "#ffffff", skeleton: "none", trails: 0.6, skelColor: "#ffffff", sparks: 0, mode: "mono", zoom: 0.2, flash: 0.2, rgb: 0, hue: 0, pixelate: 0, glitch: 0, kaleido: 0, vis: "columns", barCount: 16, colMax: 0.6, visColor: "#ffffff", visOpacity: 0.35 },
+  Skeleton: { bodyOn: true, bodyMode: "cutout", bgColor: "#000000", outline: 0, skeleton: "neon", skelColor: "#39ff14", skelWidth: 1.4, trails: 0.4, sparks: 0.7, mode: "mono", zoom: 0.3, flash: 0, rgb: 0.3, hue: 0, pixelate: 0, glitch: 0, kaleido: 0, vis: "circle", followVis: true, visColor: "#39ff14", visOpacity: 0.8 },
+  Ghost: { bodyOn: true, bodyMode: "bodyfx", outline: 0.4, outlineColor: "#ffffff", skeleton: "none", trails: 0.8, skelColor: "#ffffff", sparks: 0, mode: "invert", zoom: 0.4, flash: 0.2, rgb: 0.8, hue: 0.5, pixelate: 0, glitch: 0.5, kaleido: 0, vis: "wave", visPos: "bottom", visColor: "#ffffff", visOpacity: 0.6 },
   Heat: { mode: "thermal", zoom: 0.5, flash: 0.2, rgb: 0.2, hue: 0, pixelate: 0.3, glitch: 0, kaleido: 0, vis: "bars", visPos: "bottom", visColor: "#ffe066", visOpacity: 0.85 },
 };
 
@@ -92,11 +112,21 @@ function randomLook() {
     visScale: rnd(0.4, 1.2),
     visColor: pick(["#ffffff", hsl(Math.random() * 360, 1, 0.6)]),
     visOpacity: rnd(0.5, 0.95),
+    ...(p.bodyOn ? {
+      bodyMode: pick(["off", "bgfx", "bgfx", "bodyfx", "fill", "cutout", "negative"]),
+      bodyColor: hsl(Math.random() * 360, 1, 0.55),
+      outline: pick([0, rnd(0.2, 0.9)]),
+      outlineColor: hsl(Math.random() * 360, 1, 0.65),
+      skeleton: pick(["none", "none", "lines", "neon", "dots"]),
+      skelColor: pick(["#ffffff", hsl(Math.random() * 360, 1, 0.6)]),
+      trails: pick([0, rnd(0.2, 1)]),
+      sparks: pick([0, rnd(0.2, 1)]),
+    } : {}),
   };
 }
 
 const STORE = "radio-settings";
-const p = Object.fromEntries(PARAMS.map(([, id, , , def]) => [id, def]));
+const p = Object.fromEntries(PARAMS.filter(r => r[3] !== "note").map(([, id, , , def]) => [id, def]));
 try { Object.assign(p, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch {}
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(p)); } catch {} };
 
@@ -114,6 +144,12 @@ function buildPanel() {
       details.open = ["Station", "Effects", "Visualiser"].includes(sec);
       details.innerHTML = `<summary>${sec}</summary>`;
       controls.append(details);
+    }
+    if (type === "note") {
+      const note = Object.assign(document.createElement("div"), { className: "note", id: "note-" + id });
+      rows.push({ row: note, when: extra.when });
+      details.append(note);
+      continue;
     }
     const row = document.createElement("label");
     row.className = "ctl" + (type === "text" ? " wide" : "");
@@ -168,6 +204,8 @@ function set(changes) {
   if (p.monitor !== prev.monitor && radio) radio.setMonitor(p.monitor);
   if (p.camera !== prev.camera && started) p.camera ? startCamera() : stopCamera();
   if (YT_KEYS.some(k => p[k] !== prev[k])) updateYouTube(p.ytUrl !== prev.ytUrl);
+  if (p.bodyOn && !prev.bodyOn) body.load();
+  if (!p.bodyOn) body.clear();
 }
 
 const presetsEl = document.getElementById("presets");
@@ -210,6 +248,9 @@ const cam = document.getElementById("cam");
 const outCanvas = document.getElementById("out");
 const placeholder = document.getElementById("placeholder");
 const fx = createFx(outCanvas, cam);
+const body = createBodyTracker(cam);
+if (p.bodyOn) body.load();
+const bodyNote = document.getElementById("note-bodyStatus");
 let radio = null, started = false, camStream = null;
 let shows = null, art = null, artUrl = null;
 
@@ -301,6 +342,21 @@ const beatEl = document.getElementById("mBeat");
 
 let silentSince = null;
 let lastCount = 0, beatsSinceRandom = 0;
+
+// Both hands above the head for half a second → a new random look (then a 3 s rest).
+let handsUpSince = 0, lastGesture = 0;
+function checkHandsUp(bs) {
+  if (!p.handsUp) return;
+  const lm = bs.people[0], t = performance.now();
+  const up = lm && lm[0].v > 0.5 && lm[15].v > 0.5 && lm[16].v > 0.5 && lm[15].y < lm[0].y && lm[16].y < lm[0].y;
+  if (!up) { handsUpSince = 0; return; }
+  if (!handsUpSince) handsUpSince = t;
+  if (t - handsUpSince > 500 && t - lastGesture > 3000) {
+    lastGesture = t;
+    handsUpSince = 0;
+    set(randomLook());
+  }
+}
 function frame() {
   const lv = radio && radio.playing ? radio.update(p.sensitivity) : QUIET;
   if (lv.count !== undefined && lv.count !== lastCount) {
@@ -315,8 +371,19 @@ function frame() {
       setStatus("No audio data – this browser may block analysing the stream; try Chrome");
     }
   }
+  const bs = p.bodyOn && p.camera ? body.update(p.mirror) : null;
+  if (bs) checkHandsUp(bs);
   const now = shows && shows[String(p.channel)] && shows[String(p.channel)].now;
-  fx.render(p, lv, radio && radio.playing ? radio : null, now, art, p.channel);
+  fx.render(p, lv, radio && radio.playing ? radio : null, now, art, p.channel, bs);
+  if (!document.hidden && bodyNote) {
+    const st = body.state.status;
+    bodyNote.textContent = !p.bodyOn ? ""
+      : st === "loading" ? "Loading body tracker…"
+      : st === "failed" ? "Body tracker failed to load"
+      : !p.camera || !cam.srcObject ? "Turn the camera on to track bodies"
+      : body.state.people.length ? `Tracking ${body.state.people.length} ${body.state.people.length === 1 ? "person" : "people"}`
+      : "No one in frame";
+  }
   if (!document.hidden) {
     meters[0].style.width = lv.bass * 100 + "%";
     meters[1].style.width = lv.mid * 100 + "%";

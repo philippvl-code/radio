@@ -1,5 +1,6 @@
-// Renders one output frame: the camera through a WebGL effects shader, then the music
-// visualiser, the NTS now-playing card and text drawn on top in 2D. The output canvas is
+// Renders one output frame: the camera through a WebGL effects shader (which can also use
+// the body mask from body.js), then body graphics, the music visualiser, the NTS
+// now-playing card and text drawn on top in 2D. The output canvas is
 // what gets broadcast, so viewers see exactly this.
 window.createFx = function (outCanvas, camVideo) {
   const W = outCanvas.width, H = outCanvas.height;
@@ -25,6 +26,11 @@ window.createFx = function (outCanvas, camVideo) {
     uniform float uZoom, uFlash, uRgb, uHue, uPix, uGlitch, uKale, uKaleRot, uMirror, uCamOn;
     uniform int uMode;
     uniform vec3 uDuoA, uDuoB;
+    uniform sampler2D uMask;
+    uniform vec2 uMaskTexel;
+    uniform float uMaskOn, uOutline;
+    uniform int uBodyMode;
+    uniform vec3 uBodyColor, uBgColor, uOutlineColor;
 
     float hash(float n) { return fract(sin(n) * 43758.5453); }
 
@@ -88,6 +94,28 @@ window.createFx = function (outCanvas, camVideo) {
 
       col = hueRotate(col, uHue);
       col += uFlash * uBeat * 0.35;
+
+      // Body mask: the mask is in output space, so sample it where the camera was sampled.
+      if (uMaskOn > 0.5) {
+        vec2 mp = clamp(p, 0.0, 1.0);
+        float m = texture2D(uMask, mp).r;
+        vec3 clean = cam(p) * uCamOn;
+        if (uBodyMode == 1) col = mix(col, clean, m);                                // effects on background only
+        else if (uBodyMode == 2) col = mix(clean, col, m);                           // effects on body only
+        else if (uBodyMode == 3) col = mix(col, uBodyColor * (0.75 + 0.5 * uBeat), m); // solid silhouette
+        else if (uBodyMode == 4) col = mix(uBgColor, col, m);                        // cut out the person
+        else if (uBodyMode == 5) col = mix(col, 1.0 - col, m);                       // negative body
+
+        if (uOutline > 0.0) {
+          vec2 d = uMaskTexel * (2.0 + 10.0 * uOutline) * (1.0 + uBass);
+          float ring =
+              abs(texture2D(uMask, mp + vec2(d.x, 0.0)).r - texture2D(uMask, mp - vec2(d.x, 0.0)).r)
+            + abs(texture2D(uMask, mp + vec2(0.0, d.y)).r - texture2D(uMask, mp - vec2(0.0, d.y)).r)
+            + abs(texture2D(uMask, mp + d).r - texture2D(uMask, mp - d).r)
+            + abs(texture2D(uMask, mp + vec2(d.x, -d.y)).r - texture2D(uMask, mp - vec2(d.x, -d.y)).r);
+          col += uOutlineColor * clamp(ring * 0.6, 0.0, 1.0) * (0.6 + 0.8 * uBeat);
+        }
+      }
       gl_FragColor = vec4(col, 1.0);
     }`;
 
@@ -119,20 +147,49 @@ window.createFx = function (outCanvas, camVideo) {
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array(3));
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
+  // Body mask lives on texture unit 1.
+  const maskTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, maskTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, 1, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, new Uint8Array(1));
+  gl.activeTexture(gl.TEXTURE0);
+
   const U = {};
   ["uRes", "uCamSize", "uTime", "uBass", "uMid", "uTreble", "uBeat", "uZoom", "uFlash", "uRgb", "uHue",
-    "uPix", "uGlitch", "uKale", "uKaleRot", "uMirror", "uCamOn", "uMode", "uDuoA", "uDuoB"]
+    "uPix", "uGlitch", "uKale", "uKaleRot", "uMirror", "uCamOn", "uMode", "uDuoA", "uDuoB",
+    "uCam", "uMask", "uMaskTexel", "uMaskOn", "uOutline", "uBodyMode", "uBodyColor", "uBgColor", "uOutlineColor"]
     .forEach(n => { U[n] = gl.getUniformLocation(prog, n); });
 
   const MODES = { normal: 0, mono: 1, duotone: 2, invert: 3, thermal: 4 };
+  const BODY_MODES = { off: 0, bgfx: 1, bodyfx: 2, fill: 3, cutout: 4, negative: 5 };
+  gl.uniform1i(U.uCam, 0);
+  gl.uniform1i(U.uMask, 1);
   const rgb = hex => { const n = parseInt(hex.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 
   let hue = 0, kaleRot = 0;
   const t0 = performance.now();
 
-  function cameraPass(p, lv) {
+  function cameraPass(p, lv, body) {
     const camReady = p.camera && camVideo.readyState >= 2 && camVideo.videoWidth > 0;
     if (camReady) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, camVideo);
+
+    const maskOn = !!(p.bodyOn && camReady && body && body.hasMask);
+    if (maskOn) {
+      gl.activeTexture(gl.TEXTURE1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, body.maskW, body.maskH, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, body.mask);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.uniform2f(U.uMaskTexel, 1 / body.maskW, 1 / body.maskH);
+    }
+    gl.uniform1f(U.uMaskOn, maskOn ? 1 : 0);
+    gl.uniform1i(U.uBodyMode, BODY_MODES[p.bodyMode] || 0);
+    gl.uniform1f(U.uOutline, p.outline);
+    gl.uniform3fv(U.uBodyColor, rgb(p.bodyColor));
+    gl.uniform3fv(U.uBgColor, rgb(p.bgColor));
+    gl.uniform3fv(U.uOutlineColor, rgb(p.outlineColor));
 
     hue = (hue + p.hue * (lv.beat * 0.09 + 0.003)) % (Math.PI * 2);
     kaleRot += 0.004 + lv.mid * 0.02;
@@ -166,6 +223,144 @@ window.createFx = function (outCanvas, camVideo) {
   const DISPLAY = 'Futura, "Futura PT", Jost, "Century Gothic", sans-serif';
   const MONO = 'ui-monospace, "SF Mono", Menlo, monospace';
   const Y = { top: 0.2, middle: 0.5, bottom: 0.82 };
+
+  // ---- Body graphics: skeleton, trails, sparks ----
+  const BONES = [[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24],
+    [23, 25], [25, 27], [24, 26], [26, 28], [27, 31], [28, 32], [15, 19], [16, 20]];
+  const JOINTS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+  const TRAIL_POINTS = [0, 15, 16, 27, 28]; // head, wrists, ankles
+  const SPARK_POINTS = [0, 15, 16];
+  let tracks = [];   // one per person, kept across frames: { c: centre, hist: {joint: [[x, y]]} }
+  let sparks = [];
+  let lastBeatCount = 0;
+  let anchors = {};
+
+  const seen = pt => pt && pt.v > 0.5;
+  const px = pt => [pt.x * W, pt.y * H];
+
+  function bodyLayer(p, lv, body) {
+    const people = p.bodyOn && body ? body.people : [];
+
+    // Pair each person with last frame's nearest track so trails stay on the right body.
+    const next = [];
+    const free = tracks.slice();
+    for (const lm of people) {
+      const pts = [lm[11], lm[12], lm[23], lm[24]];
+      const c = [pts.reduce((a, q) => a + q.x, 0) / 4 * W, pts.reduce((a, q) => a + q.y, 0) / 4 * H];
+      let best = -1, bestD = W * 0.25;
+      free.forEach((t, i) => { const d = Math.hypot(t.c[0] - c[0], t.c[1] - c[1]); if (d < bestD) { bestD = d; best = i; } });
+      const t = best >= 0 ? free.splice(best, 1)[0] : { hist: {} };
+      t.c = c;
+      t.lm = lm;
+      next.push(t);
+    }
+    tracks = next;
+
+    // Anchors for the visualiser and text to follow (first person).
+    anchors = {};
+    if (tracks[0]) {
+      const lm = tracks[0].lm;
+      const shoulderW = Math.hypot((lm[11].x - lm[12].x) * W, (lm[11].y - lm[12].y) * H);
+      anchors.chest = { x: tracks[0].c[0], y: (lm[11].y + lm[12].y) / 2 * H * 0.6 + tracks[0].c[1] * 0.4, size: shoulderW };
+      if (seen(lm[0])) anchors.head = { x: lm[0].x * W, y: lm[0].y * H - shoulderW * 0.75 };
+    }
+
+    const color = p.skelColor;
+    const base = H * 0.007 * p.skelWidth * (1 + lv.bass * 0.8);
+    out.save();
+    out.lineCap = out.lineJoin = "round";
+    out.strokeStyle = out.fillStyle = color;
+    if (p.skeleton === "neon") {
+      out.globalCompositeOperation = "lighter";
+      out.shadowColor = color;
+      out.shadowBlur = base * 4;
+    }
+
+    // Trails
+    if (p.trails > 0) {
+      const len = Math.round(3 + p.trails * 40);
+      for (const t of tracks) {
+        for (const j of TRAIL_POINTS) {
+          const h = t.hist[j] || (t.hist[j] = []);
+          if (seen(t.lm[j])) h.push(px(t.lm[j]));
+          while (h.length > len) h.shift();
+          for (let k = 1; k < h.length; k++) {
+            out.globalAlpha = (k / h.length) * 0.9;
+            out.lineWidth = base * (0.4 + (k / h.length) * 1.2);
+            out.beginPath();
+            out.moveTo(h[k - 1][0], h[k - 1][1]);
+            out.lineTo(h[k][0], h[k][1]);
+            out.stroke();
+          }
+        }
+      }
+      out.globalAlpha = 1;
+    }
+
+    // Skeleton
+    if (p.skeleton !== "none") {
+      for (const t of tracks) {
+        const lm = t.lm;
+        if (p.skeleton !== "dots") {
+          out.lineWidth = base;
+          out.beginPath();
+          for (const [a, b] of BONES) {
+            if (!seen(lm[a]) || !seen(lm[b])) continue;
+            out.moveTo(lm[a].x * W, lm[a].y * H);
+            out.lineTo(lm[b].x * W, lm[b].y * H);
+          }
+          out.stroke();
+          if (seen(lm[0]) && seen(lm[11]) && seen(lm[12])) {
+            const r = Math.hypot((lm[11].x - lm[12].x) * W, (lm[11].y - lm[12].y) * H) * 0.28 * (1 + lv.beat * 0.15);
+            out.beginPath();
+            out.arc(lm[0].x * W, lm[0].y * H, r, 0, Math.PI * 2);
+            out.stroke();
+          }
+        }
+        const jr = base * (p.skeleton === "dots" ? 1.6 : 0.9) * (1 + lv.beat * 1.2);
+        for (const j of JOINTS) {
+          if (!seen(lm[j])) continue;
+          out.beginPath();
+          out.arc(lm[j].x * W, lm[j].y * H, jr, 0, Math.PI * 2);
+          out.fill();
+        }
+      }
+    }
+
+    // Sparks fly from the head and hands on every beat.
+    if (lv.count !== undefined && lv.count !== lastBeatCount) {
+      lastBeatCount = lv.count;
+      if (p.sparks > 0) {
+        const n = Math.round(p.sparks * 14 * (0.5 + lv.bass));
+        for (const t of tracks) {
+          for (const j of SPARK_POINTS) {
+            if (!seen(t.lm[j])) continue;
+            const [x, y] = px(t.lm[j]);
+            for (let k = 0; k < n; k++) {
+              const a = Math.random() * Math.PI * 2, sp = H * (0.004 + Math.random() * 0.012);
+              const life = 25 + Math.random() * 30;
+              sparks.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - H * 0.004, life, max: life });
+            }
+          }
+        }
+        if (sparks.length > 900) sparks = sparks.slice(-900);
+      }
+    }
+    if (sparks.length) {
+      out.globalCompositeOperation = "lighter";
+      out.shadowBlur = 0;
+      const r = H * 0.0035;
+      sparks = sparks.filter(s => {
+        s.x += s.vx; s.y += s.vy; s.vy += H * 0.0004; s.life--;
+        out.globalAlpha = Math.max(0, s.life / s.max);
+        out.beginPath();
+        out.arc(s.x, s.y, r * (0.5 + s.life / s.max), 0, Math.PI * 2);
+        out.fill();
+        return s.life > 0;
+      });
+    }
+    out.restore();
+  }
 
   function visualiser(p, lv, radio) {
     if (p.vis === "none" || !radio) return;
@@ -207,7 +402,9 @@ window.createFx = function (outCanvas, camVideo) {
       out.stroke();
     } else if (p.vis === "circle") {
       const n = p.barCount * 2, v = radio.bars(p.barCount, p.sensitivity);
-      const r = H * 0.14 * (1 + lv.beat * 0.12 * p.visScale);
+      const follow = p.bodyOn && p.followVis && anchors.chest;
+      const cx = follow ? anchors.chest.x : W / 2, ccy = follow ? anchors.chest.y : cy;
+      const r = (follow ? Math.max(H * 0.08, anchors.chest.size * 0.75) : H * 0.14) * (1 + lv.beat * 0.12 * p.visScale);
       out.lineWidth = Math.max(2, (2 * Math.PI * r) / n * 0.55);
       out.lineCap = "round";
       out.beginPath();
@@ -215,8 +412,8 @@ window.createFx = function (outCanvas, camVideo) {
         const a = (i / n) * Math.PI * 2 - Math.PI / 2;
         const val = v[i < n / 2 ? i : n - 1 - i]; // mirror left/right
         const len = 4 + val * maxH * 0.6;
-        out.moveTo(W / 2 + Math.cos(a) * r, cy + Math.sin(a) * r);
-        out.lineTo(W / 2 + Math.cos(a) * (r + len), cy + Math.sin(a) * (r + len));
+        out.moveTo(cx + Math.cos(a) * r, ccy + Math.sin(a) * r);
+        out.lineTo(cx + Math.cos(a) * (r + len), ccy + Math.sin(a) * (r + len));
       }
       out.stroke();
     }
@@ -289,13 +486,15 @@ window.createFx = function (outCanvas, camVideo) {
     out.shadowColor = "rgba(0,0,0,0.35)";
     out.shadowBlur = size * 0.15;
     out.fillStyle = p.textColor;
-    out.fillText(p.text, W / 2, H * Y[p.textPos]);
+    if (p.bodyOn && p.followText && anchors.head) out.fillText(p.text, anchors.head.x, anchors.head.y - size * 0.4);
+    else out.fillText(p.text, W / 2, H * Y[p.textPos]);
     out.restore();
   }
 
   return {
-    render(p, lv, radio, np, art, channel) {
-      cameraPass(p, lv);
+    render(p, lv, radio, np, art, channel, body) {
+      cameraPass(p, lv, body);
+      bodyLayer(p, lv, body);
       visualiser(p, lv, radio);
       nowPlaying(p, np, art, channel);
       text(p, lv);
