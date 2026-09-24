@@ -123,11 +123,12 @@ window.createVoice = function () {
       c.input.connect(conv); conv.connect(wet); wet.connect(c.output);
       c.extra = [conv, wet];
     } else if (style === "radio") {
-      const hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), sh = ctx.createWaveShaper();
+      const hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), sh = ctx.createWaveShaper(), trim = ctx.createGain();
       hp.type = "highpass"; hp.frequency.value = 450; lp.type = "lowpass"; lp.frequency.value = 2800;
-      sh.curve = distortion(25);
-      c.input.connect(hp); hp.connect(lp); lp.connect(sh); sh.connect(c.output);
-      c.extra = [hp, lp, sh];
+      sh.curve = distortion(12);
+      trim.gain.value = 0.35; // the distortion adds a lot of level; keep it from clipping the mix
+      c.input.connect(hp); hp.connect(lp); lp.connect(sh); sh.connect(trim); trim.connect(c.output);
+      c.extra = [hp, lp, sh, trim];
     } else if (style === "robot") {
       // Ring modulation: multiply the voice by a low sine wave.
       const ring = ctx.createGain(), osc = ctx.createOscillator();

@@ -417,6 +417,7 @@ const meters = ["Bass", "Mid", "Treble"].map(n => document.getElementById("m" + 
 const beatEl = document.getElementById("mBeat");
 
 let silentSince = null;
+const NO_AUDIO = "No audio data – this browser may block analysing the stream; try Chrome";
 let lastCount = 0, beatsSinceRandom = 0;
 
 // Both hands above the head for half a second → a new random look (then a 3 s rest).
@@ -441,10 +442,13 @@ function frame() {
     if (p.autoRandom && beatsSinceRandom >= p.autoRandom) { beatsSinceRandom = 0; set(randomLook()); }
   }
   if (radio && radio.playing) {
-    const silent = radio.freq.every(v => v === 0);
+    // Silence while the voice is talking is just the music being lowered, not a problem.
+    const silent = radio.freq.every(v => v === 0) && !voice.state.speaking;
     silentSince = silent ? silentSince || performance.now() : null;
     if (silentSince && performance.now() - silentSince > 4000 && !peer) {
-      setStatus("No audio data – this browser may block analysing the stream; try Chrome");
+      setStatus(NO_AUDIO);
+    } else if (!silent && statusText.textContent === NO_AUDIO) {
+      setStatus(radio.decoding ? "Studio on (not live) · decoded audio" : "Studio on (not live)");
     }
   }
   const tb = performance.now();
