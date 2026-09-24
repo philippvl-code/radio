@@ -391,7 +391,7 @@ function goLive() {
   });
   peer.on("disconnected", () => peer && peer.reconnect());
   peer.on("error", err => {
-    if (err.type === "unavailable-id") { setStatus("Already live in another tab"); stopLive(); }
+    if (err.type === "unavailable-id") { stopLive(); setStatus("Already live in another tab or on another device"); }
     else if (err.type !== "peer-unavailable") setStatus("Error: " + err.type);
   });
 }
