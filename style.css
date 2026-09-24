@@ -42,7 +42,7 @@ button.stop { background: var(--live); color: #fff; }
 
 /* Studio */
 .studio { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
-@media (max-width: 900px) { .studio { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .studio { grid-template-columns: minmax(0, 1fr); } }
 .left { display: grid; gap: 14px; position: sticky; top: 16px; }
 @media (max-width: 900px) { .left { position: static; } }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -63,13 +63,13 @@ button.stop { background: var(--live); color: #fff; }
 .panel summary::-webkit-details-marker { display: none; }
 .panel summary::after { content: "+"; color: var(--muted); }
 .panel details[open] summary::after { content: "–"; }
-.ctl { display: grid; grid-template-columns: 1fr 132px; align-items: center; gap: 10px; padding: 5px 0; font-size: 12px; color: var(--muted); }
+.ctl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 132px); align-items: center; gap: 10px; padding: 5px 0; font-size: 12px; color: var(--muted); }
 .ctl .val { display: flex; align-items: center; gap: 6px; }
 .ctl .val span { min-width: 3ch; text-align: right; color: var(--fg); font-size: 11px; }
 .ctl input[type=range] { width: 100%; accent-color: var(--fg); min-width: 0; }
 .ctl input[type=color] { width: 100%; height: 26px; border: 0; background: none; padding: 0; cursor: pointer; }
 .ctl input[type=text], .ctl select {
-  width: 100%; font: inherit; font-size: 12px; color: var(--fg); background: var(--bg);
+  width: 100%; min-width: 0; font: inherit; font-size: 12px; color: var(--fg); background: var(--bg);
   border: 1px solid var(--line); border-radius: 6px; padding: 5px 6px;
 }
 .ctl input[type=checkbox] { justify-self: end; width: 16px; height: 16px; accent-color: var(--fg); }
