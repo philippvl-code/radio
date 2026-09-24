@@ -363,15 +363,17 @@ function broadcastInfo() {
   conns.forEach(c => c.open && c.send({ type: "station", channel: p.channel }));
 }
 
-function goLive() {
-  outStream = new MediaStream([
-    ...outCanvas.captureStream(30).getVideoTracks(),
-    ...radio.stream.getAudioTracks(),
-  ]);
+function goLive(slot = 0) {
+  if (!outStream) {
+    outStream = new MediaStream([
+      ...outCanvas.captureStream(30).getVideoTracks(),
+      ...radio.stream.getAudioTracks(),
+    ]);
+  }
   liveBtn.disabled = true;
-  peer = new Peer(STREAM_ID);
+  const me = peer = new Peer(STREAM_IDS[slot]);
   peer.on("open", () => {
-    setStatus("Live", true);
+    setStatus(slot ? `Live (backup slot ${slot + 1})` : "Live", true);
     liveBtn.textContent = "End live";
     liveBtn.classList.add("stop");
     liveBtn.disabled = false;
@@ -381,7 +383,7 @@ function goLive() {
       conns.add(conn);
       conn.send({ type: "station", channel: p.channel });
       conn.send(ytState());
-      const call = peer.call(conn.peer, outStream, { sdpTransform: musicSdp });
+      const call = me.call(conn.peer, outStream, { sdpTransform: musicSdp });
       calls.set(conn.peer, call);
       updateViewers();
       const drop = () => { calls.delete(conn.peer); updateViewers(); };
@@ -389,10 +391,17 @@ function goLive() {
       conn.on("close", () => { conns.delete(conn); call.close(); drop(); });
     });
   });
-  peer.on("disconnected", () => peer && peer.reconnect());
+  peer.on("disconnected", () => { if (peer === me) me.reconnect(); });
   peer.on("error", err => {
-    if (err.type === "unavailable-id") { stopLive(); setStatus("Already live in another tab or on another device"); }
-    else if (err.type !== "peer-unavailable") setStatus("Error: " + err.type);
+    if (err.type === "unavailable-id") {
+      // A stale studio still holds this ID; move on to the next one.
+      me.destroy();
+      if (slot + 1 < STREAM_IDS.length) return goLive(slot + 1);
+      stopLive();
+      setStatus("Every stream slot is taken – close other studio tabs and try again");
+    } else if (err.type !== "peer-unavailable") {
+      setStatus("Error: " + err.type);
+    }
   });
 }
 

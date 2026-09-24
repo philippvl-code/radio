@@ -7,7 +7,7 @@
   <meta name="description" content="Live camera with visuals driven by NTS Radio.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@500&display=swap">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <header>
@@ -26,10 +26,10 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <script src="config.js?v=9"></script>
-  <script src="nts.js?v=9"></script>
-  <script src="fullscreen.js?v=9"></script>
-  <script src="youtube.js?v=9"></script>
+  <script src="config.js?v=10"></script>
+  <script src="nts.js?v=10"></script>
+  <script src="fullscreen.js?v=10"></script>
+  <script src="youtube.js?v=10"></script>
   <script>
     const video = document.getElementById("video");
     const placeholder = document.getElementById("placeholder");
@@ -84,23 +84,42 @@
 
     const musicSdp = sdp => sdp.replace(/useinbandfec=1/g, "useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=256000");
     const peer = new Peer();
-    let retryTimer = null;
+    let retryTimer = null, offlineTimer = null, conns = [], liveCall = null;
 
+    function onData(msg) {
+      if (!msg) return;
+      if (msg.type === "station") { channel = msg.channel; renderNowPlaying(); }
+      if (msg.type === "yt") { ytLast = msg; yt.apply({ ...msg, on: msg.on && !!video.srcObject }, msg.time); }
+    }
+
+    // The studio registers under the first free ID in STREAM_IDS, so knock on all of them
+    // and watch whichever studio calls back. Nobody calling within 8 s means off air.
     function connect() {
       clearTimeout(retryTimer);
       setStatus("Connecting…");
-      const conn = peer.connect(STREAM_ID, { reliable: true });
-      conn.on("data", msg => {
-        if (msg && msg.type === "station") { channel = msg.channel; renderNowPlaying(); }
-        if (msg && msg.type === "yt") { ytLast = msg; yt.apply({ ...msg, on: msg.on && !!video.srcObject }, msg.time); }
+      conns.forEach(c => c.close());
+      conns = STREAM_IDS.map(id => {
+        const conn = peer.connect(id, { reliable: true });
+        conn.on("data", onData);
+        conn.on("close", () => { if (liveCall && liveCall.peer === conn.peer) dropLive(); });
+        return conn;
       });
-      conn.on("close", () => { showOffline(); scheduleRetry(); });
-      conn.on("error", () => { showOffline(); scheduleRetry(); });
+      clearTimeout(offlineTimer);
+      offlineTimer = setTimeout(() => { if (!liveCall) { showOffline(); scheduleRetry(); } }, 8000);
     }
     function scheduleRetry() { clearTimeout(retryTimer); retryTimer = setTimeout(connect, 5000); }
+    function dropLive() {
+      if (liveCall) liveCall.close();
+      liveCall = null;
+      showOffline();
+      scheduleRetry();
+    }
 
     peer.on("open", connect);
     peer.on("call", call => {
+      if (liveCall) return call.close(); // already watching a studio
+      liveCall = call;
+      conns.filter(c => c.peer !== call.peer).forEach(c => c.close());
       call.answer(undefined, { sdpTransform: musicSdp });
       call.on("stream", stream => {
         video.srcObject = stream;
@@ -109,11 +128,11 @@
         setStatus("Live", true);
         if (ytLast) yt.apply(ytLast, ytLast.time);
       });
-      call.on("close", () => { showOffline(); scheduleRetry(); });
+      call.on("close", () => { if (liveCall === call) dropLive(); });
     });
     peer.on("error", err => {
-      if (err.type === "peer-unavailable") showOffline();
-      else setStatus("Error: " + err.type);
+      if (err.type === "peer-unavailable") return; // that slot is empty; the timer decides
+      setStatus("Error: " + err.type);
       scheduleRetry();
     });
     peer.on("disconnected", () => peer.reconnect());
