@@ -24,7 +24,8 @@ window.createRadio = function () {
 
   const levels = { bass: 0, mid: 0, treble: 0, beat: 0 };
   const peak = { bass: 0.2, mid: 0.2, treble: 0.2 };
-  let bassAvg = 0, lastBeat = 0, lastT = performance.now();
+  const bassHistory = [0, 0, 0, 0];
+  let fluxAvg = 0.03, lastBeat = 0, lastT = performance.now();
 
   function band(lo, hi) {
     const a = Math.max(1, Math.floor(lo / binHz)), b = Math.min(freq.length - 1, Math.ceil(hi / binHz));
@@ -34,7 +35,9 @@ window.createRadio = function () {
   }
 
   // Levels are 0..1, auto-gained against a slowly falling peak so quiet and loud shows
-  // both drive the effects. `beat` jumps to 1 on a kick and decays.
+  // both drive the effects. `beat` jumps to 1 on a kick and decays. Kicks are found as a
+  // sudden rise in bass over the last few frames (heavily compressed radio audio rarely
+  // rises far above its average, but each kick is still a sharp step up).
   function update(sensitivity = 1) {
     const now = performance.now();
     const dt = Math.min(0.1, (now - lastT) / 1000);
@@ -48,8 +51,12 @@ window.createRadio = function () {
       levels[k] = Math.min(1, Math.pow(raw[k] / peak[k], 3) * sensitivity);
     }
 
-    bassAvg += (raw.bass - bassAvg) * Math.min(1, dt * 2.5);
-    if (raw.bass > bassAvg * (1.12 + 0.2 / sensitivity) && raw.bass > 0.25 && now - lastBeat > 260) {
+    const flux = Math.max(0, raw.bass - Math.min(...bassHistory));
+    bassHistory.shift();
+    bassHistory.push(raw.bass);
+    fluxAvg += (flux - fluxAvg) * Math.min(1, dt * 1.5);
+    const threshold = Math.max(0.07, fluxAvg * 2.5) / sensitivity;
+    if (flux > threshold && raw.bass > 0.2 && now - lastBeat > 260) {
       levels.beat = 1;
       lastBeat = now;
     } else {
