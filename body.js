@@ -21,23 +21,39 @@ window.createBodyTracker = function (cam) {
     status: "off",
   };
   let landmarker = null, loading = null, last = 0, cost = 0;
+  let delegate = "GPU", emptyMasks = 0;
+
+  function create() {
+    return (async () => {
+      const { PoseLandmarker, FilesetResolver } = await import(VISION + "/vision_bundle.mjs");
+      const fileset = await FilesetResolver.forVisionTasks(VISION + "/wasm");
+      landmarker = await PoseLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: MODEL, delegate },
+        runningMode: "VIDEO",
+        numPoses: 3,
+        outputSegmentationMasks: true,
+      });
+      state.status = "ready";
+    })().catch(e => { state.status = "failed"; console.error(e); });
+  }
 
   function load() {
     if (!loading) {
       state.status = "loading";
-      loading = (async () => {
-        const { PoseLandmarker, FilesetResolver } = await import(VISION + "/vision_bundle.mjs");
-        const fileset = await FilesetResolver.forVisionTasks(VISION + "/wasm");
-        landmarker = await PoseLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: MODEL, delegate: "GPU" },
-          runningMode: "VIDEO",
-          numPoses: 3,
-          outputSegmentationMasks: true,
-        });
-        state.status = "ready";
-      })().catch(e => { state.status = "failed"; console.error(e); });
+      loading = create();
     }
     return loading;
+  }
+
+  // Some browsers/GPUs hand back GPU masks as all zeros even when people are found.
+  // After a few of those in a row, rebuild the tracker on the CPU, where masks work.
+  function switchToCpu() {
+    if (delegate === "CPU") return;
+    delegate = "CPU";
+    const old = landmarker;
+    landmarker = null;
+    state.status = "loading";
+    loading = create().then(() => old && old.close());
   }
 
   function update(mirror) {
@@ -64,17 +80,21 @@ window.createBodyTracker = function (cam) {
       if (state.hasMask) {
         const m = state.mask;
         m.fill(0);
+        let max = 0;
         for (const mask of masks) {
           const f = mask.getAsFloat32Array();
           for (let i = 0; i < f.length && i < m.length; i++) {
             const v = f[i] * 255;
-            if (v > m[i]) m[i] = v;
+            if (v > m[i]) { m[i] = v; if (v > max) max = v; }
           }
         }
+        emptyMasks = state.people.length && max === 0 ? emptyMasks + 1 : 0;
+        if (emptyMasks >= 5) switchToCpu();
       }
     });
     cost = cost * 0.8 + (performance.now() - t0) * 0.2;
     state.cost = cost;
+    state.delegate = delegate;
     return state;
   }
 
