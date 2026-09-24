@@ -20,7 +20,7 @@ window.createBodyTracker = function (cam) {
     hasMask: false,
     status: "off",
   };
-  let landmarker = null, loading = null, last = 0;
+  let landmarker = null, loading = null, last = 0, cost = 0;
 
   function load() {
     if (!loading) {
@@ -42,7 +42,9 @@ window.createBodyTracker = function (cam) {
 
   function update(mirror) {
     const now = performance.now();
-    if (!landmarker || cam.readyState < 2 || !cam.videoWidth || now - last < MIN_INTERVAL) return state;
+    // Wait at least twice as long as a detection takes, so a slow machine spends at most a
+    // third of its time tracking and the visuals stay responsive.
+    if (!landmarker || cam.readyState < 2 || !cam.videoWidth || now - last < Math.max(MIN_INTERVAL, cost * 2)) return state;
     last = now;
 
     // Same object-fit: cover crop as the shader.
@@ -54,6 +56,7 @@ window.createBodyTracker = function (cam) {
     ctx.drawImage(cam, sx, sy, sw, sh, 0, 0, W, H);
     ctx.restore();
 
+    const t0 = performance.now();
     landmarker.detectForVideo(canvas, now, res => {
       state.people = (res.landmarks || []).map(lm => lm.map(p => ({ x: p.x, y: p.y, v: p.visibility ?? 1 })));
       const masks = res.segmentationMasks || [];
@@ -70,6 +73,8 @@ window.createBodyTracker = function (cam) {
         }
       }
     });
+    cost = cost * 0.8 + (performance.now() - t0) * 0.2;
+    state.cost = cost;
     return state;
   }
 

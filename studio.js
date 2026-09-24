@@ -396,14 +396,14 @@ function frame() {
 const ticker = new Worker(URL.createObjectURL(new Blob(["setInterval(() => postMessage(0), 1000 / 30);"], { type: "text/javascript" })));
 // If a frame runs long (body tracking on a busy machine), ticks queue up behind it; skip
 // the stale ones instead of rendering them all back to back, which would lock the page.
-let lastFrame = 0;
+let lastFrameEnd = 0;
 const frameStats = { ms: 0, body: 0 };
 ticker.onmessage = () => {
   const t = performance.now();
-  if (t - lastFrame < 25) return;
-  lastFrame = t;
+  if (t - lastFrameEnd < 12) return; // a tick that queued up while the last frame ran
   frame();
-  frameStats.ms = frameStats.ms * 0.9 + (performance.now() - t) * 0.1;
+  lastFrameEnd = performance.now();
+  frameStats.ms = frameStats.ms * 0.9 + (lastFrameEnd - t) * 0.1;
 };
 
 // ---- Start / stop studio ----
