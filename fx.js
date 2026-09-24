@@ -491,6 +491,87 @@ window.createFx = function (outCanvas, camVideo) {
     out.restore();
   }
 
+  // ---- Drawings from the remote's drawing pad, animated to the music ----
+  // A drawing: { id, kind: stroke|line|rect|ellipse|triangle|star, points: [[x, y]] in 0..1,
+  //   color, width (px at 720p), fill, glow, hue (cycle colour), anim, source, amount }
+  const drawAnim = new Map(); // id → { angle }
+  const t0d = performance.now();
+
+  function shapePath(d, pts, cx, cy, jitter, progress) {
+    const P = pts.map(([x, y]) => [x * W - cx, y * H - cy]);
+    const j = () => (jitter ? (Math.random() - 0.5) * jitter : 0);
+    out.beginPath();
+    if (d.kind === "stroke" || d.kind === "line") {
+      const n = Math.max(2, Math.ceil(P.length * progress));
+      P.slice(0, n).forEach(([x, y], i) => (i ? out.lineTo(x + j(), y + j()) : out.moveTo(x + j(), y + j())));
+      return;
+    }
+    const [[x0, y0], [x1, y1]] = [P[0], P[P.length - 1]];
+    const l = Math.min(x0, x1), r = Math.max(x0, x1), t = Math.min(y0, y1), b = Math.max(y0, y1);
+    if (d.kind === "rect") {
+      out.rect(l + j(), t + j(), r - l, b - t);
+    } else if (d.kind === "ellipse") {
+      out.ellipse((l + r) / 2 + j(), (t + b) / 2 + j(), (r - l) / 2, (b - t) / 2, 0, 0, Math.PI * 2 * progress);
+    } else if (d.kind === "triangle") {
+      out.moveTo((l + r) / 2 + j(), t + j()); out.lineTo(r + j(), b + j()); out.lineTo(l + j(), b + j()); out.closePath();
+    } else if (d.kind === "star") {
+      const mx = (l + r) / 2, my = (t + b) / 2, rx = (r - l) / 2, ry = (b - t) / 2;
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5, k = i % 2 ? 0.45 : 1;
+        const x = mx + Math.cos(a) * rx * k + j(), y = my + Math.sin(a) * ry * k + j();
+        i ? out.lineTo(x, y) : out.moveTo(x, y);
+      }
+      out.closePath();
+    }
+  }
+
+  function drawingsLayer(p, lv, list) {
+    if (!p.drawOn || !list || !list.length) return;
+    const t = (performance.now() - t0d) / 1000;
+    out.save();
+    out.lineCap = out.lineJoin = "round";
+    for (const d of list) {
+      const pts = d.points;
+      if (!Array.isArray(pts) || !pts.length) continue;
+      let minX = 1, maxX = 0, minY = 1, maxY = 0;
+      for (const [x, y] of pts) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+      const cx = (minX + maxX) / 2 * W, cy = (minY + maxY) / 2 * H;
+      const lvl = d.source === "beat" ? lv.beat : lv[d.source] || 0;
+      const a = d.amount == null ? 0.6 : d.amount;
+      const st = drawAnim.get(d.id) || { angle: 0 };
+      drawAnim.set(d.id, st);
+
+      let scale = 1, rot = 0, dy = 0, alpha = 1, jitter = 0, progress = 1;
+      if (d.anim === "pulse") scale = 1 + a * lvl * 0.6;
+      else if (d.anim === "spin") { st.angle += a * (0.01 + lvl * 0.15); rot = st.angle; }
+      else if (d.anim === "bounce") dy = -a * lvl * H * 0.15;
+      else if (d.anim === "wobble") jitter = a * lvl * H * 0.04;
+      else if (d.anim === "flash") alpha = 0.1 + 0.9 * lvl;
+      else if (d.anim === "trace") progress = Math.max(0.02, (t * (0.25 + a * 0.75)) % 1.15);
+      else if (d.anim === "dance") {
+        scale = 1 + a * lv.beat * 0.35;
+        rot = Math.sin(t * 2.2) * a * 0.35 * (0.3 + lv.mid);
+        dy = -a * lv.bass * H * 0.06;
+      }
+      progress = Math.min(1, progress);
+
+      const color = d.hue ? `hsl(${(t * 60 + (d.id % 360)) % 360}, 95%, 60%)` : d.color || "#ffffff";
+      const width = (d.width || 6) * (H / 720) * (d.anim === "pulse" ? 1 + a * lvl * 0.5 : 1);
+      out.globalAlpha = alpha * p.drawOpacity;
+      out.strokeStyle = out.fillStyle = color;
+      out.lineWidth = width;
+      out.shadowColor = color;
+      out.shadowBlur = d.glow ? width * 2.5 * (1 + lvl) : 0;
+      out.setTransform(1, 0, 0, 1, cx, cy + dy);
+      out.rotate(rot);
+      out.scale(scale, scale);
+      shapePath(d, pts, cx, cy, jitter, progress);
+      if (d.fill && d.kind !== "stroke" && d.kind !== "line") out.fill();
+      else out.stroke();
+    }
+    out.restore();
+  }
+
   // Captions for the voice generator: the sentence being spoken, at the bottom.
   function caption(text) {
     if (!text) return;
@@ -510,9 +591,10 @@ window.createFx = function (outCanvas, camVideo) {
   }
 
   return {
-    render(p, lv, radio, np, art, channel, body, captionText) {
+    render(p, lv, radio, np, art, channel, body, captionText, drawingList) {
       cameraPass(p, lv, body);
       bodyLayer(p, lv, body);
+      drawingsLayer(p, lv, drawingList);
       visualiser(p, lv, radio);
       nowPlaying(p, np, art, channel);
       text(p, lv);

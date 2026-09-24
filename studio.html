@@ -7,7 +7,7 @@
   <title>Radio Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@500&display=swap">
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
   <header>
@@ -37,6 +37,18 @@
       </div>
 
       <div class="np" id="np"></div>
+
+      <div class="remote" id="remote">
+        <div>
+          <div class="remote-label">Remote code</div>
+          <div class="remote-code" id="remoteCode">––– –––</div>
+          <div class="remote-info" id="remoteInfo"></div>
+        </div>
+        <div class="remote-actions">
+          <button id="remoteBtn" class="ghost">Enable remote</button>
+          <button id="remoteNewBtn" class="ghost">New code</button>
+        </div>
+      </div>
     </div>
 
     <aside class="panel">
@@ -54,15 +66,16 @@
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mpg123-decoder@1.0.3/dist/mpg123-decoder.min.js" charset="UTF-8"></script>
-  <script src="config.js?v=19"></script>
-  <script src="nts.js?v=19"></script>
-  <script src="audio.js?v=19"></script>
-  <script src="fx.js?v=19"></script>
-  <script src="body.js?v=19"></script>
-  <script src="voice.js?v=19"></script>
-  <script src="fullscreen.js?v=19"></script>
-  <script src="youtube.js?v=19"></script>
-  <script src="studio.js?v=19"></script>
+  <script src="config.js?v=20"></script>
+  <script src="nts.js?v=20"></script>
+  <script src="audio.js?v=20"></script>
+  <script src="fx.js?v=20"></script>
+  <script src="body.js?v=20"></script>
+  <script src="voice.js?v=20"></script>
+  <script src="remote.js?v=20"></script>
+  <script src="fullscreen.js?v=20"></script>
+  <script src="youtube.js?v=20"></script>
+  <script src="studio.js?v=20"></script>
   <script>setupFullscreen(document.querySelector(".stage"), document.getElementById("fsBtn"));</script>
 </body>
 </html>

@@ -72,6 +72,10 @@ const PARAMS = [
   ["Voice", "vCaptions", "Show captions", "toggle", true],
   ["Voice", "vRepeat", "Repeat", "select", 0, { options: [[0, "Off"], [30, "Every 30 s"], [60, "Every minute"], [120, "Every 2 minutes"], [300, "Every 5 minutes"]] }],
 
+  ["Drawings", "drawOn", "Show drawings", "toggle", true],
+  ["Drawings", "drawOpacity", "Opacity", "range", 1, range()],
+  ["Drawings", "drawClear", "", "buttons", ""],
+
   ["YouTube overlay", "ytUrl", "YouTube link", "text", ""],
   ["YouTube overlay", "ytOn", "Show video", "toggle", false],
   ["YouTube overlay", "ytLayout", "Layout", "select", "full", { options: [["full", "Full frame"], ["center", "Centre"], ["tl", "Top left"], ["tr", "Top right"], ["bl", "Bottom left"], ["br", "Bottom right"]] }],
@@ -217,9 +221,15 @@ function syncPanel() {
   rows.forEach(r => { r.row.hidden = r.when ? !r.when(p) : false; });
 }
 
-function set(changes) {
+let remote = null; // set up at the end of this file
+
+function set(input) {
   const prev = { ...p };
+  // Only accept known settings with the right kind of value (changes can come from the remote).
+  const changes = {};
+  for (const k in input) if (k in p && typeof input[k] === typeof p[k]) changes[k] = input[k];
   Object.assign(p, changes);
+  if (remote) remote.pushState();
   save();
   syncPanel();
   if (p.channel !== prev.channel) changeChannel();
@@ -456,7 +466,8 @@ function frame() {
   frameStats.body = Math.max(frameStats.body * 0.95, performance.now() - tb);
   if (bs) checkHandsUp(bs);
   const now = shows && shows[String(p.channel)] && shows[String(p.channel)].now;
-  fx.render(p, lv, radio && radio.playing ? radio : null, now, art, p.channel, bs, voice.state.caption);
+  fx.render(p, lv, radio && radio.playing ? radio : null, now, art, p.channel, bs, voice.state.caption, drawings);
+  lastLevels = lv;
   if (!document.hidden) renderVoiceNote();
   if (!document.hidden && bodyNote) {
     const st = body.state.status;
@@ -612,3 +623,89 @@ setInterval(() => {
   if (st.on && st.id) yt.apply(st, st.time);
   sendYouTube();
 }, 2000);
+
+// ---- Drawings (made on the remote's drawing pad) ----
+const DRAW_KEY = "radio-drawings";
+let drawings = [];
+try { drawings = JSON.parse(localStorage.getItem(DRAW_KEY) || "[]"); } catch {}
+let lastLevels = QUIET;
+function setDrawings(list) {
+  // Keep only well-formed drawings, capped so a runaway remote can't flood the studio.
+  drawings = list.filter(d => d && Array.isArray(d.points) && d.points.length && d.points.length <= 2000).slice(-200);
+  try { localStorage.setItem(DRAW_KEY, JSON.stringify(drawings)); } catch {}
+}
+const clearDrawingsBtn = Object.assign(document.createElement("button"), { className: "ghost", textContent: "Clear drawings" });
+clearDrawingsBtn.addEventListener("click", () => { setDrawings([]); remote.pushDrawings(); });
+document.getElementById("buttons-drawClear").append(clearDrawingsBtn);
+
+// ---- Remote control (NTS Studio Remote app) ----
+function visibleIds() {
+  return PARAMS.filter(r => { const w = (r[5] || {}).when; return !w || w(p); }).map(r => r[1]);
+}
+function nowPlayingInfo() {
+  const now = shows && shows[String(p.channel)] && shows[String(p.channel)].now;
+  return now ? { title: now.title, location: now.location, start: now.start, end: now.end, image: now.image } : null;
+}
+remote = createRemoteServer({
+  schema: () => ({
+    type: "schema",
+    params: PARAMS.map(([section, id, label, type, def, extra = {}]) => ({
+      section, id, label, type, def,
+      min: extra.min, max: extra.max, step: extra.step,
+      options: extra.options ? extra.options.map(([v, t]) => [String(v), t]) : undefined,
+    })),
+    presets: Object.keys(PRESETS),
+    voices: KOKORO_VOICES,
+  }),
+  state: () => ({
+    type: "state",
+    values: p,
+    visible: visibleIds(),
+    started, live: !!(peer && peer.open), viewers: calls.size,
+    status: statusText.textContent,
+    notes: { bodyStatus: bodyNote.textContent, vStatus: voiceNote.textContent },
+    speaking: voice.state.speaking,
+    nowPlaying: nowPlayingInfo(),
+    channel: p.channel,
+  }),
+  levels: () => ({ bass: lastLevels.bass, mid: lastLevels.mid, treble: lastLevels.treble, beat: lastLevels.beat }),
+  canvas: () => outCanvas,
+  drawings: () => drawings,
+  set: changes => set(changes),
+  setDrawings: list => setDrawings(list),
+  action: (name, arg) => {
+    if (name === "start" && !started) startBtn.click();
+    else if (name === "stop" && started) startBtn.click();
+    else if (name === "live" && started && !peer) goLive();
+    else if (name === "endlive" && peer) stopLive();
+    else if (name === "speak") speakBtn.click();
+    else if (name === "hush") hushBtn.click();
+    else if (name === "randomise") set(randomLook());
+    else if (name === "preset" && PRESETS[arg]) set(PRESETS[arg]);
+    else if (name === "clearDrawings") { setDrawings([]); remote.pushDrawings(); }
+    remote.pushState();
+  },
+  changed: renderRemote,
+});
+
+const remoteEl = document.getElementById("remote");
+const remoteCode = document.getElementById("remoteCode");
+const remoteInfo = document.getElementById("remoteInfo");
+const remoteBtn = document.getElementById("remoteBtn");
+const remoteNewBtn = document.getElementById("remoteNewBtn");
+function renderRemote() {
+  const s = remote.state;
+  remoteCode.textContent = remote.active ? s.code.replace(/(...)(...)/, "$1 $2") : "––– –––";
+  remoteInfo.textContent = !remote.active ? "Control this studio from the NTS Studio Remote app."
+    : s.status === "ready" ? (s.remotes ? `${s.remotes} remote${s.remotes === 1 ? "" : "s"} connected` : "Enter this code in the app")
+    : s.status;
+  remoteBtn.textContent = remote.active ? "Turn remote off" : "Enable remote";
+  remoteEl.classList.toggle("on", remote.active);
+}
+// Enabling the remote is also the click the browser needs before the remote may start audio.
+remoteBtn.addEventListener("click", () => { remote.active ? remote.stop() : remote.start(); try { localStorage.setItem("radio-remote-on", remote.active ? "1" : ""); } catch {} renderRemote(); });
+remoteNewBtn.addEventListener("click", () => remote.regenerate());
+try { if (localStorage.getItem("radio-remote-on")) remote.start(); } catch {}
+renderRemote();
+// Keep remotes' status line, meters and notes fresh even when nothing is being changed.
+setInterval(() => remote.pushState(), 1000);
