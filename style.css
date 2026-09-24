@@ -79,4 +79,4 @@ button.stop { background: var(--live); color: #fff; }
 
 /* Viewer */
 .viewer { max-width: 1100px; margin: 0 auto; display: grid; gap: 14px; }
-.unmute { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); }
+.unmute { position: absolute; right: 12px; bottom: 12px; padding: 8px 12px; font-size: 12px; white-space: nowrap; }
